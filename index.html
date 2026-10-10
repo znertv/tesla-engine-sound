@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Engine Sound</title>
+<style>
+:root{--bg:#0b0d10;--card:#161a20;--fg:#e8edf2;--dim:#8a96a3;--acc:#ff3b2f;--ok:#2ecc71;--warn:#f1c40f}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,sans-serif;user-select:none}
+main{display:grid;grid-template-columns:1.2fr 1fr;gap:18px;padding:18px;max-width:1400px;margin:auto}
+.card{background:var(--card);border-radius:18px;padding:18px}
+h1{margin:0 0 6px;font-size:22px;color:var(--dim);font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.gauges{display:flex;gap:18px;justify-content:space-around;align-items:center}
+.gauge{text-align:center}.big{font-size:110px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.unit{font-size:24px;color:var(--dim)}
+.tach{height:34px;background:#222830;border-radius:10px;overflow:hidden;margin-top:16px;position:relative}
+.tach>div{height:100%;width:0;background:linear-gradient(90deg,#2ecc71,#f1c40f 70%,#ff3b2f 88%)}
+.tachlbl{display:flex;justify-content:space-between;color:var(--dim);font-size:20px;margin-top:6px}
+#gear{font-size:80px;font-weight:800;color:var(--acc)}
+button,select,input[type=text]{font-size:22px;border-radius:14px;border:0;padding:16px 20px;background:#252b33;color:var(--fg)}
+button{cursor:pointer;min-height:64px}button:active{transform:scale(.97)}
+#start{width:100%;font-size:40px;font-weight:800;padding:28px;background:var(--acc)}#start.on{background:#444c57}
+.row{display:flex;gap:12px;align-items:center;margin:14px 0;flex-wrap:wrap}.row label{min-width:110px;color:var(--dim);font-size:20px}
+select{flex:1;min-width:0}
+input[type=range]{flex:1;height:48px;accent-color:var(--acc)}
+#status{font-size:20px;padding:12px 16px;border-radius:12px;background:#222830}
+.dot{display:inline-block;width:16px;height:16px;border-radius:50%;background:var(--dim);margin-right:10px;vertical-align:-2px}
+.ok .dot{background:var(--ok)}.warn .dot{background:var(--warn)}.err .dot{background:var(--acc)}
+.toggle.on{background:var(--acc)}small{color:var(--dim);font-size:16px}
+#customList button{font-size:16px;min-height:44px;padding:8px 12px}
+@media(max-width:900px){main{grid-template-columns:1fr}.big{font-size:80px}}
+</style></head><body>
+<main>
+<section class="card">
+  <h1>Engine Sound</h1>
+  <div class="gauges">
+    <div class="gauge"><div class="big" id="spd">0</div><div class="unit" id="unitLbl">km/h</div></div>
+    <div class="gauge"><div id="gear">N</div><div class="unit">gear</div></div>
+    <div class="gauge"><div class="big" id="rpm" style="font-size:64px">0</div><div class="unit">rpm</div></div>
+  </div>
+  <div class="tach"><div id="tachBar"></div></div>
+  <div class="tachlbl"><span>0</span><span id="redLbl">8000</span></div>
+  <div class="row" style="margin-top:22px"><button id="start">START</button></div>
+  <div id="status" class="warn"><span class="dot"></span><span id="statusTxt">GPS idle – press Start</span></div>
+</section>
+<section class="card">
+  <div class="row"><label>Car</label><select id="car"></select></div>
+  <div class="row"><label>Volume</label><input type="range" id="vol" min="0" max="1" step="0.01"></div>
+  <div class="row"><label>Units</label><button id="units" class="toggle">km/h</button>
+    <button id="simBtn" class="toggle">Simulate</button></div>
+  <div class="row" id="simRow" style="display:none"><label>Sim speed</label><input type="range" id="sim" min="0" max="300" step="1" value="0"><span id="simVal" style="min-width:90px">0</span></div>
+  <hr style="border-color:#2a3038">
+  <div class="row"><label>Recording</label><input type="file" id="file" accept="audio/*" style="font-size:18px;flex:1"></div>
+  <div class="row"><input type="text" id="url" placeholder="…or audio URL" style="flex:1;min-width:0"><button id="urlBtn">Load</button></div>
+  <div class="row"><label>Clip RPM</label><input type="range" id="refRpm" min="1000" max="8000" step="100"><span id="refVal" style="min-width:80px"></span></div>
+  <small>Clip RPM = engine speed your recording was made at (should be a steady rev). Saved clips persist on this device.</small>
+  <div id="customList"></div>
+</section>
+</main>
+<script>
+"use strict";
+// ---------- Presets ----------
+// ratios: km/h per 1000 rpm per gear. harm: [multiple of firing freq, gain, type]
+const PRESETS={
+ v12:{name:"Ferrari-style V12",cyl:12,idle:1000,red:9000,ratios:[9,13.5,18.5,24,30,37,45],
+   harm:[[0.5,.25,"sawtooth"],[1,.6,"sawtooth"],[2,.35,"square"],[3,.18,"sawtooth"],[4,.08,"sawtooth"]],
+   noise:.18,nf:3000,dist:2.5,cut:[900,6.5],q:4,wobble:.03,bright:1},
+ v10:{name:"Lamborghini V10",cyl:10,idle:1000,red:8700,ratios:[8.5,13,18,23.5,29.5,36,44],
+   harm:[[0.5,.45,"sawtooth"],[1,.55,"square"],[1.5,.2,"sawtooth"],[2,.3,"sawtooth"],[3,.12,"square"]],
+   noise:.25,nf:2200,dist:4,cut:[700,5.5],q:6,wobble:.06,bright:.9},
+ f6:{name:"Porsche flat-6",cyl:6,idle:900,red:9000,ratios:[9,14,19.5,25,31,37.5],
+   harm:[[0.5,.35,"square"],[1,.6,"sawtooth"],[1.5,.25,"square"],[2,.3,"sawtooth"],[3,.15,"sawtooth"]],
+   noise:.22,nf:2600,dist:3.2,cut:[800,5],q:5,wobble:.05,bright:.95},
+ v8:{name:"American muscle V8",cyl:8,idle:750,red:6500,ratios:[11,17,24,32,42,52],
+   harm:[[0.25,.55,"sawtooth"],[0.5,.7,"square"],[1,.5,"sawtooth"],[2,.15,"square"]],
+   noise:.3,nf:900,dist:6,cut:[350,3.5],q:3,wobble:.18,bright:.6},
+ gen:{name:"Generic sports car (I4 turbo)",cyl:4,idle:850,red:7200,ratios:[10,16,22.5,29,36,44],
+   harm:[[0.5,.3,"sawtooth"],[1,.6,"sawtooth"],[2,.25,"square"],[3,.1,"sawtooth"]],
+   noise:.3,nf:3500,dist:2.5,cut:[600,5],q:3,wobble:.04,bright:.8},
+};
+// ---------- Settings ----------
+const S=Object.assign({car:"v12",vol:.7,units:"kmh",refRpm:3000},JSON.parse(localStorage.getItem("engineSettings")||"{}"));
+const save=()=>localStorage.setItem("engineSettings",JSON.stringify(S));
+const $=id=>document.getElementById(id);
+// ---------- IndexedDB for custom clips ----------
+const DB={db:null,
+ open(){return new Promise((res,rej)=>{if(!window.indexedDB)return rej("no idb");const r=indexedDB.open("engineSound",1);
+  r.onupgradeneeded=()=>r.result.createObjectStore("clips",{keyPath:"id"});r.onsuccess=()=>{this.db=r.result;res()};r.onerror=()=>rej(r.error)})},
+ tx(m){return this.db.transaction("clips",m).objectStore("clips")},
+ all(){return new Promise(res=>{if(!this.db)return res([]);const r=this.tx("readonly").getAll();r.onsuccess=()=>res(r.result);r.onerror=()=>res([])})},
+ put(o){return new Promise(res=>{if(!this.db)return res();const r=this.tx("readwrite").put(o);r.onsuccess=r.onerror=()=>res()})},
+ del(id){return new Promise(res=>{if(!this.db)return res();const r=this.tx("readwrite").delete(id);r.onsuccess=r.onerror=()=>res()})}};
+let customs=[]; // {id,name,blob,ref}
+// ---------- Audio ----------
+let ctx=null,master=null,engine=null;
+function distCurve(k){const n=1024,c=new Float32Array(n);for(let i=0;i<n;i++){const x=i*2/n-1;c[i]=Math.tanh(k*x)/Math.tanh(k)}return c}
+function noiseBuf(){const b=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate),d=b.getChannelData(0);let l=0;for(let i=0;i<d.length;i++){const w=Math.random()*2-1;l=(l+0.04*w)/1.04;d[i]=w*.5+l*3}return b}
+class SynthEngine{
+ constructor(p){this.p=p;const t=ctx.currentTime;
+  this.out=ctx.createGain();this.out.gain.value=0;
+  this.shaper=ctx.createWaveShaper();this.shaper.curve=distCurve(p.dist);this.shaper.oversample="2x";
+  this.lp=ctx.createBiquadFilter();this.lp.type="lowpass";this.lp.Q.value=p.q*.3;
+  this.peak=ctx.createBiquadFilter();this.peak.type="peaking";this.peak.Q.value=1.2;this.peak.gain.value=6;
+  this.pre=ctx.createGain();this.pre.gain.value=.5;
+  this.am=ctx.createGain();this.am.gain.value=1; // combustion pulse modulation
+  this.amOsc=ctx.createOscillator();this.amOsc.type="sine";this.amDepth=ctx.createGain();this.amDepth.gain.value=p.wobble;
+  this.amOsc.connect(this.amDepth).connect(this.am.gain);this.amOsc.start();
+  this.pre.connect(this.am).connect(this.shaper).connect(this.lp).connect(this.peak).connect(this.out);
+  this.oscs=p.harm.map(([m,g,type])=>{const o=ctx.createOscillator();o.type=type;const gn=ctx.createGain();gn.gain.value=g/p.harm.length*2;
+    o.connect(gn).connect(this.pre);o.start();return{o,m,gn,g}});
+  // intake/exhaust noise
+  this.ns=ctx.createBufferSource();this.ns.buffer=noiseBuf();this.ns.loop=true;
+  this.nbp=ctx.createBiquadFilter();this.nbp.type="bandpass";this.nbp.Q.value=1.5;
+  this.ng=ctx.createGain();this.ng.gain.value=0;
+  this.ns.connect(this.nbp).connect(this.ng);this.ng.connect(this.pre);this.ns.start();
+  this.out.connect(master);this.out.gain.setTargetAtTime(1,t,.1);
+ }
+ update(rpm,load){const p=this.p,t=ctx.currentTime,tc=.04;
+  const f=rpm/60*p.cyl/2, n=(rpm-p.idle)/(p.red-p.idle);
+  for(const h of this.oscs){h.o.frequency.setTargetAtTime(f*h.m,t,tc);
+    // higher harmonics swell with load and rpm
+    const k=h.m>1?(.5+load*.8+n*.4):1; h.gn.gain.setTargetAtTime(h.g/this.oscs.length*2*k,t,tc)}
+  this.amOsc.frequency.setTargetAtTime(rpm/60/2,t,tc); // crank rotation lump
+  this.amDepth.gain.setTargetAtTime(p.wobble*(1.2-n*.6),t,tc);
+  const cut=p.cut[0]+rpm*p.cut[1]*(.45+.75*load)*p.bright;
+  this.lp.frequency.setTargetAtTime(Math.min(cut,16000),t,tc);
+  this.peak.frequency.setTargetAtTime(f*2,t,tc);
+  this.nbp.frequency.setTargetAtTime(p.nf*(.4+n),t,tc);
+  this.ng.gain.setTargetAtTime(p.noise*(.15+load*.85)*(.3+n),t,tc);
+  this.pre.gain.setTargetAtTime(.35+.35*load+.15*n,t,tc);
+ }
+ stop(){const t=ctx.currentTime;this.out.gain.setTargetAtTime(0,t,.08);setTimeout(()=>{this.oscs.forEach(h=>h.o.stop());this.ns.stop();this.amOsc.stop();this.out.disconnect()},500)}
+}
+function makeSeamless(buf){ // crossfade tail into head -> click-free loop
+ const xf=Math.min(Math.floor(buf.sampleRate*.15),Math.floor(buf.length/3)),len=buf.length-xf;
+ const out=ctx.createBuffer(buf.numberOfChannels,len,buf.sampleRate);
+ for(let c=0;c<buf.numberOfChannels;c++){const s=buf.getChannelData(c),d=out.getChannelData(c);d.set(s.subarray(0,len));
+  for(let i=0;i<xf;i++){const a=i/xf;d[i]=s[i]*Math.sin(a*Math.PI/2)+s[len+i]*Math.cos(a*Math.PI/2)}}
+ return out}
+class ClipEngine{
+ constructor(buf,ref){this.ref=ref;this.out=ctx.createGain();this.out.gain.value=0;
+  this.lp=ctx.createBiquadFilter();this.lp.type="lowpass";
+  this.src=ctx.createBufferSource();this.src.buffer=buf;this.src.loop=true;
+  this.src.connect(this.lp).connect(this.out).connect(master);this.src.start();this.out.gain.setTargetAtTime(1,ctx.currentTime,.1)}
+ update(rpm,load){const t=ctx.currentTime;this.src.playbackRate.setTargetAtTime(Math.max(.25,Math.min(4,rpm/S.refRpm)),t,.05);
+  this.lp.frequency.setTargetAtTime(1500+load*14000,t,.05);this.out.gain.setTargetAtTime(.6+.4*load,t,.05)}
+ stop(){this.out.gain.setTargetAtTime(0,ctx.currentTime,.08);setTimeout(()=>{this.src.stop();this.out.disconnect()},500)}
+}
+async function buildEngine(){
+ if(!ctx)return; if(engine){engine.stop();engine=null}
+ if(S.car.startsWith("c:")){const c=customs.find(x=>"c:"+x.id===S.car);
+  if(c){try{if(!c.buf)c.buf=makeSeamless(await ctx.decodeAudioData(await c.blob.arrayBuffer()));engine=new ClipEngine(c.buf);return}
+   catch(e){setStatus("err","Could not decode recording: "+c.name)}}
+  S.car="v12";save();$("car").value="v12"}
+ engine=new SynthEngine(PRESETS[S.car]||PRESETS.v12);
+}
+function preset(){return S.car.startsWith("c:")?{idle:900,red:8000,ratios:[9,14,19.5,25,31,37.5]}:PRESETS[S.car]}
+// ---------- Speed / gear model ----------
+const st={target:0,accel:0,fixT:0,fixSpeed:0,smooth:0,gear:0,rpm:800,load:0,cut:0,last:null,running:false,sim:false};
+function onFix(pos){
+ const c=pos.coords,now=performance.now();let v=c.speed; // m/s
+ if(v==null||isNaN(v)){if(st.last){const dt=(pos.timestamp-st.last.t)/1000;if(dt>0.2){v=hav(st.last.c,c)/dt}else v=st.fixSpeed}else v=0}
+ if(c.accuracy>50&&v<1.5)v=0; // ignore jitter
+ v=Math.max(0,v*3.6);
+ const dt=st.fixT?(now-st.fixT)/1000:1; st.accel=dt>0?Math.max(-30,Math.min(30,(v-st.fixSpeed)/dt)):0;
+ st.fixSpeed=v;st.fixT=now;st.last={c:{latitude:c.latitude,longitude:c.longitude},t:pos.timestamp};
+ setStatus("ok",`GPS OK · ±${Math.round(c.accuracy)} m`);
+}
+function hav(a,b){const R=6371e3,r=Math.PI/180,dLa=(b.latitude-a.latitude)*r,dLo=(b.longitude-a.longitude)*r;
+ const h=Math.sin(dLa/2)**2+Math.cos(a.latitude*r)*Math.cos(b.latitude*r)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
+let lastTick=performance.now();
+function tick(){
+ const now=performance.now(),dt=Math.min(.1,(now-lastTick)/1000);lastTick=now;
+ // predicted speed between fixes: extrapolate with last accel (max 1.5 s), then exponential smoothing
+ let target;
+ if(st.sim)target=+$("sim").value*(S.units==="mph"?1.609344:1);
+ else{const since=Math.min(1.5,(now-st.fixT)/1000);target=st.fixT?Math.max(0,st.fixSpeed+st.accel*since*.8):0}
+ const prev=st.smooth; st.smooth+=(target-st.smooth)*(1-Math.exp(-dt/(st.sim?.6:.45)));
+ const acc=(st.smooth-prev)/Math.max(dt,1e-3); // km/h per s
+ const p=preset();
+ // throttle/load factor from acceleration (~15 km/h/s = full)
+ let load=Math.max(0.05,Math.min(1,.25+acc/15)); if(acc<-1)load=.05;
+ // gear selection
+ const rpmIn=g=>st.smooth/p.ratios[g]*1000;
+ const up=p.idle+(p.red-p.idle)*(.55+.38*load), down=p.idle+(p.red-p.idle)*.22;
+ if(st.smooth<3)st.gear=0;
+ else{if(rpmIn(st.gear)>up&&st.gear<p.ratios.length-1){st.gear++;st.cut=.18}
+  else if(st.gear>0&&rpmIn(st.gear)<down){st.gear--}}
+ let tr=rpmIn(st.gear);
+ if(st.smooth<12)tr=Math.max(tr,p.idle+ (st.smooth>0.5?(1200+1500*load)*(1-st.smooth/12):0)); // clutch slip at launch
+ tr=Math.max(p.idle,Math.min(p.red,tr));
+ if(st.cut>0){st.cut-=dt;load=.05;tr*=0.97} // shift: throttle cut + rev drop
+ st.rpm+=(tr-st.rpm)*(1-Math.exp(-dt/(st.cut>0?.05:.08)));
+ st.load+=(load-st.load)*(1-Math.exp(-dt/.12));
+ if(st.rpm>=p.red*.995)st.rpm-=Math.random()*250; // limiter bounce
+ if(engine&&st.running)engine.update(st.rpm,st.load);
+ // UI
+ const shown=S.units==="mph"?st.smooth/1.609344:st.smooth;
+ $("spd").textContent=Math.round(shown);$("rpm").textContent=Math.round(st.rpm/10)*10;
+ $("gear").textContent=st.smooth<3?"N":st.gear+1;$("tachBar").style.width=(st.rpm/p.red*100)+"%";$("redLbl").textContent=p.red;
+}
+setInterval(tick,30);
+// ---------- GPS ----------
+let watchId=null;
+function setStatus(cls,txt){$("status").className=cls;$("statusTxt").textContent=txt}
+function startGPS(){
+ if(st.sim)return setStatus("warn","Simulation mode (GPS off)");
+ if(!("geolocation" in navigator))return setStatus("err","GPS not available in this browser – use Simulate");
+ if(!window.isSecureContext)return setStatus("err","GPS needs HTTPS – open the page via https://");
+ setStatus("warn","Waiting for GPS fix…");
+ watchId=navigator.geolocation.watchPosition(onFix,e=>{
+   if(e.code===1)setStatus("err","Location permission denied – allow location for this site, or use Simulate");
+   else if(e.code===2)setStatus("err","GPS position unavailable – retrying…");
+   else setStatus("warn","GPS timeout – still waiting for a fix…");
+ },{enableHighAccuracy:true,maximumAge:0,timeout:15000});
+}
+function stopGPS(){if(watchId!=null)navigator.geolocation.clearWatch(watchId);watchId=null}
+// ---------- Wake lock ----------
+let wl=null;
+async function wake(){try{if("wakeLock" in navigator&&document.visibilityState==="visible")wl=await navigator.wakeLock.request("screen")}catch(e){}}
+document.addEventListener("visibilitychange",()=>{if(st.running&&document.visibilityState==="visible")wake()});
+// ---------- Start/Stop ----------
+$("start").onclick=async()=>{
+ if(!st.running){
+  if(!ctx){const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return setStatus("err","Web Audio not supported");
+   ctx=new AC();master=ctx.createGain();const comp=ctx.createDynamicsCompressor();comp.threshold.value=-10;
+   master.connect(comp).connect(ctx.destination)}
+  await ctx.resume();master.gain.value=S.vol;st.running=true;await buildEngine();startGPS();wake();
+  $("start").textContent="STOP";$("start").classList.add("on");
+ }else{st.running=false;if(engine){engine.stop();engine=null}stopGPS();if(wl){wl.release().catch(()=>{});wl=null}
+  $("start").textContent="START";$("start").classList.remove("on");if(!st.sim)setStatus("warn","Stopped")}
+};
+// ---------- Controls ----------
+function fillCars(){const s=$("car");s.innerHTML="";
+ for(const[k,p]of Object.entries(PRESETS))s.add(new Option(p.name,k));
+ for(const c of customs)s.add(new Option("🎙 "+c.name,"c:"+c.id));
+ if(![...s.options].some(o=>o.value===S.car))S.car="v12";s.value=S.car;
+ $("customList").innerHTML="";for(const c of customs){const b=document.createElement("button");b.textContent="✕ delete "+c.name;
+  b.onclick=async()=>{await DB.del(c.id);customs=customs.filter(x=>x!==c);if(S.car==="c:"+c.id){S.car="v12";save();buildEngine()}fillCars()};$("customList").append(b)}}
+$("car").onchange=e=>{S.car=e.target.value;save();buildEngine()};
+$("vol").value=S.vol;$("vol").oninput=e=>{S.vol=+e.target.value;save();if(master)master.gain.setTargetAtTime(S.vol,ctx.currentTime,.05)};
+function unitsUI(){$("units").textContent=S.units==="mph"?"mph":"km/h";$("unitLbl").textContent=$("units").textContent;
+ $("sim").max=S.units==="mph"?190:300;$("simVal").textContent=$("sim").value+" "+$("units").textContent}
+$("units").onclick=()=>{const kmh=+$("sim").value*(S.units==="mph"?1.609344:1);S.units=S.units==="mph"?"kmh":"mph";save();
+ $("sim").value=Math.round(S.units==="mph"?kmh/1.609344:kmh);unitsUI()};
+$("simBtn").onclick=()=>{st.sim=!st.sim;$("simBtn").classList.toggle("on",st.sim);$("simRow").style.display=st.sim?"flex":"none";
+ if(st.sim){stopGPS();setStatus("warn","Simulation mode (GPS off)")}else if(st.running)startGPS();else setStatus("warn","GPS idle – press Start")};
+$("sim").oninput=unitsUI;
+$("refRpm").value=S.refRpm;$("refVal").textContent=S.refRpm;$("refRpm").oninput=e=>{S.refRpm=+e.target.value;$("refVal").textContent=S.refRpm;save()};
+async function addClip(blob,name){
+ const c={id:Date.now().toString(36),name:name.slice(0,40),blob};
+ if(ctx){try{c.buf=makeSeamless(await ctx.decodeAudioData(await blob.arrayBuffer()))}catch(e){return setStatus("err","That file isn't a playable audio clip")}}
+ await DB.put({id:c.id,name:c.name,blob});customs.push(c);S.car="c:"+c.id;save();fillCars();buildEngine();setStatus($("status").className,"Recording loaded: "+c.name)}
+$("file").onchange=e=>{const f=e.target.files[0];if(f)addClip(f,f.name)};
+$("urlBtn").onclick=async()=>{const u=$("url").value.trim();if(!u)return;
+ try{const r=await fetch(u);if(!r.ok)throw 0;addClip(await r.blob(),u.split("/").pop()||"clip")}
+ catch(e){setStatus("err","Couldn't download that URL (it may block cross-site access)")}};
+unitsUI();
+DB.open().then(()=>DB.all()).then(a=>{customs=a;fillCars()}).catch(()=>fillCars());
+fillCars();
+</script></body></html>
