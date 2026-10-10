@@ -39,6 +39,8 @@ input[type=range]{flex:1;height:48px;accent-color:var(--acc)}
   <div class="tach"><div id="tachBar"></div></div>
   <div class="tachlbl"><span>0</span><span id="redLbl">8000</span></div>
   <div class="row" style="margin-top:22px"><button id="start">START</button></div>
+  <div class="row"><button id="testBtn" style="flex:1">Test sound</button><span id="audioState" style="font-size:18px;color:var(--dim)">Audio: not started</span></div>
+  <div id="audioErr" style="display:none;color:var(--acc);font-size:18px;margin:8px 0"></div>
   <div id="status" class="warn"><span class="dot"></span><span id="statusTxt">GPS idle – press Start</span></div>
 </section>
 <section class="card">
@@ -51,7 +53,7 @@ input[type=range]{flex:1;height:48px;accent-color:var(--acc)}
   <div class="row"><label>Recording</label><input type="file" id="file" accept="audio/*" style="font-size:18px;flex:1"></div>
   <div class="row"><input type="text" id="url" placeholder="…or audio URL" style="flex:1;min-width:0"><button id="urlBtn">Load</button></div>
   <div class="row"><label>Clip RPM</label><input type="range" id="refRpm" min="1000" max="8000" step="100"><span id="refVal" style="min-width:80px"></span></div>
-  <small>Clip RPM = engine speed your recording was made at (should be a steady rev). Saved clips persist on this device.</small>
+  <small id="ver">v1.1.0</small><br><small>Clip RPM = engine speed your recording was made at (should be a steady rev). Saved clips persist on this device.</small>
   <div id="customList"></div>
 </section>
 </main>
@@ -77,7 +79,10 @@ const PRESETS={
    noise:.3,nf:3500,dist:2.5,cut:[600,5],q:3,wobble:.04,bright:.8},
 };
 // ---------- Settings ----------
-const S=Object.assign({car:"v12",vol:.7,units:"kmh",refRpm:3000},JSON.parse(localStorage.getItem("engineSettings")||"{}"));
+const APP_VERSION="1.1.0";
+let S0={};try{S0=JSON.parse(localStorage.getItem("engineSettings")||"{}")}catch(e){}
+const S=Object.assign({car:"v12",vol:.7,units:"kmh",refRpm:3000},S0);
+if(!(S.vol>=0.05))S.vol=.7; // never start silent
 const save=()=>localStorage.setItem("engineSettings",JSON.stringify(S));
 const $=id=>document.getElementById(id);
 // ---------- IndexedDB for custom clips ----------
@@ -218,16 +223,50 @@ let wl=null;
 async function wake(){try{if("wakeLock" in navigator&&document.visibilityState==="visible")wl=await navigator.wakeLock.request("screen")}catch(e){}}
 document.addEventListener("visibilitychange",()=>{if(st.running&&document.visibilityState==="visible")wake()});
 // ---------- Start/Stop ----------
-$("start").onclick=async()=>{
+function audioErr(m){const e=$("audioErr");e.style.display=m?"block":"none";e.textContent=m?"Audio error: "+m:""}
+function showState(){$("audioState").textContent="Audio: "+(ctx?ctx.state:"not started")}
+let silentEl=null;
+function silentWav(){ // 1 s of near-silence, 8 kHz mono 16-bit
+ const n=8000,b=new ArrayBuffer(44+n*2),v=new DataView(b),w=(o,t)=>{for(let i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i))};
+ w(0,"RIFF");v.setUint32(4,36+n*2,true);w(8,"WAVE");w(12,"fmt ");v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+ v.setUint32(24,8000,true);v.setUint32(28,16000,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,"data");v.setUint32(40,n*2,true);
+ return URL.createObjectURL(new Blob([b],{type:"audio/wav"}))}
+// Must be called synchronously inside a user gesture (no await before it).
+function unlockAudio(){
+ try{if(navigator.audioSession)navigator.audioSession.type="playback"}catch(e){}
+ try{if(!silentEl){silentEl=document.createElement("audio");silentEl.src=silentWav();silentEl.loop=true;
+   silentEl.setAttribute("playsinline","");silentEl.setAttribute("webkit-playsinline","");silentEl.preload="auto";document.body.appendChild(silentEl)}
+  const p=silentEl.play();if(p&&p.catch)p.catch(()=>{})}catch(e){}
+ try{
+  if(!ctx){const AC=window.AudioContext||window.webkitAudioContext;if(!AC){audioErr("Web Audio not supported in this browser");return false}
+   ctx=new AC();master=ctx.createGain();master.gain.value=S.vol;const comp=ctx.createDynamicsCompressor();comp.threshold.value=-10;
+   analyser=ctx.createAnalyser();analyser.fftSize=2048;
+   master.connect(comp).connect(ctx.destination);comp.connect(analyser);
+   ctx.onstatechange=showState;
+   // play a 1-sample buffer in the gesture (old iOS unlock trick)
+   const b=ctx.createBuffer(1,1,22050),src=ctx.createBufferSource();src.buffer=b;src.connect(ctx.destination);src.start(0)}
+  if(ctx.state!=="running"){const p=ctx.resume();if(p&&p.then)p.then(()=>{showState();audioErr("")},e=>audioErr("could not start ("+(e&&e.message||e)+")"))}
+  showState();return true
+ }catch(e){audioErr(e&&e.message||String(e));return false}}
+let analyser=null;
+window.__rms=()=>{if(!analyser)return 0;const d=new Float32Array(analyser.fftSize);analyser.getFloatTimeDomainData(d);let s=0;for(const x of d)s+=x*x;return Math.sqrt(s/d.length)};
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&ctx&&ctx.state!=="running"&&st.running){ctx.resume().catch(()=>{});showState()}});
+["touchend","click"].forEach(ev=>document.addEventListener(ev,()=>{if(ctx&&ctx.state!=="running"){ctx.resume().then(showState,()=>{});if(silentEl)silentEl.play().catch(()=>{})}},true));
+setInterval(()=>{if(ctx)showState()},1000);
+$("start").onclick=()=>{
  if(!st.running){
-  if(!ctx){const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return setStatus("err","Web Audio not supported");
-   ctx=new AC();master=ctx.createGain();const comp=ctx.createDynamicsCompressor();comp.threshold.value=-10;
-   master.connect(comp).connect(ctx.destination)}
-  await ctx.resume();master.gain.value=S.vol;st.running=true;await buildEngine();startGPS();wake();
+  if(!unlockAudio())return;
+  master.gain.cancelScheduledValues(ctx.currentTime);master.gain.value=S.vol;st.running=true;
+  buildEngine().catch(e=>audioErr("engine: "+(e&&e.message||e)));
+  setTimeout(startGPS,0);wake(); // GPS prompt never blocks audio
   $("start").textContent="STOP";$("start").classList.add("on");
  }else{st.running=false;if(engine){engine.stop();engine=null}stopGPS();if(wl){wl.release().catch(()=>{});wl=null}
+  if(silentEl)silentEl.pause();
   $("start").textContent="START";$("start").classList.remove("on");if(!st.sim)setStatus("warn","Stopped")}
 };
+$("testBtn").onclick=()=>{if(!unlockAudio())return;const t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+ o.type="square";o.frequency.value=880;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.3,t+.01);g.gain.setValueAtTime(.3,t+.35);g.gain.linearRampToValueAtTime(0,t+.4);
+ o.connect(g).connect(analyser?ctx.destination:ctx.destination);g.connect(analyser);o.start(t);o.stop(t+.45)};
 // ---------- Controls ----------
 function fillCars(){const s=$("car");s.innerHTML="";
  for(const[k,p]of Object.entries(PRESETS))s.add(new Option(p.name,k));
