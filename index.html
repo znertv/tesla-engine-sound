@@ -54,7 +54,7 @@ input[type=range]{flex:1;height:48px;accent-color:var(--acc)}
   <div class="row"><label>Recording</label><input type="file" id="file" accept="audio/*" style="font-size:18px;flex:1"></div>
   <div class="row"><input type="text" id="url" placeholder="…or audio URL" style="flex:1;min-width:0"><button id="urlBtn">Load</button></div>
   <div class="row"><label>Clip RPM</label><input type="range" id="refRpm" min="1000" max="8000" step="100"><span id="refVal" style="min-width:80px"></span></div>
-  <small id="ver">v1.2.0</small><br><small>Clip RPM = engine speed your recording was made at (should be a steady rev). Saved clips persist on this device.</small>
+  <small id="ver">v1.3.0</small><br><small>Clip RPM = engine speed your recording was made at (should be a steady rev). Saved clips persist on this device.</small>
   <div id="customList"></div>
   <details id="credits" style="margin-top:14px;font-size:16px;color:var(--dim)"><summary style="font-size:18px;cursor:pointer">Sound credits</summary>
   <p>"Real recordings" mode uses short loops cut, pitch-steadied and loudness-normalised from these freely licensed recordings (modified from the originals). The derived loops are shared under the same licences.</p>
@@ -78,12 +78,15 @@ const PRESETS={
  v8:{name:"American muscle V8",cyl:8,idle:750,red:6500,ratios:[11,17,24,32,42,52],
    harm:[[0.25,.55,"sawtooth"],[0.5,.7,"square"],[1,.5,"sawtooth"],[2,.15,"square"]],
    noise:.3,nf:900,dist:6,cut:[350,3.5],q:3,wobble:.18,bright:.6},
+ tb:{name:"Twin-turbo V6 (GT-R style) – turbo whistle",cyl:6,idle:1000,red:7000,ratios:[9,14.5,20,26,32.5,39],turbo:1,
+   harm:[[0.5,.3,"sawtooth"],[1,.6,"sawtooth"],[1.5,.2,"square"],[2,.25,"sawtooth"],[3,.1,"sawtooth"]],
+   noise:.28,nf:3000,dist:3,cut:[600,5],q:3,wobble:.05,bright:.85},
  gen:{name:"Generic sports car (I4 turbo)",cyl:4,idle:850,red:7200,ratios:[10,16,22.5,29,36,44],
    harm:[[0.5,.3,"sawtooth"],[1,.6,"sawtooth"],[2,.25,"square"],[3,.1,"sawtooth"]],
    noise:.3,nf:3500,dist:2.5,cut:[600,5],q:3,wobble:.04,bright:.8},
 };
 // ---------- Settings ----------
-const APP_VERSION="1.2.0";
+const APP_VERSION="1.3.0";
 let S0={};try{S0=JSON.parse(localStorage.getItem("engineSettings")||"{}")}catch(e){}
 const S=Object.assign({car:"v12",vol:.7,units:"kmh",refRpm:3000,mode:"real"},S0);
 if(!(S.vol>=0.05))S.vol=.7; // never start silent
@@ -120,7 +123,7 @@ class SynthEngine{
   this.nbp=ctx.createBiquadFilter();this.nbp.type="bandpass";this.nbp.Q.value=1.5;
   this.ng=ctx.createGain();this.ng.gain.value=0;
   this.ns.connect(this.nbp).connect(this.ng);this.ng.connect(this.pre);this.ns.start();
-  this.out.connect(this.dest);this.out.gain.setTargetAtTime(1,t,.1);
+  this.out.connect(this.dest);this.out.gain.setTargetAtTime(1,t,.1);if(p.turbo&&!dest)this.turbo=new TurboFX(this.out);
  }
  update(rpm,load){const p=this.p,t=ctx.currentTime,tc=.04;
   const f=rpm/60*p.cyl/2, n=(rpm-p.idle)/(p.red-p.idle);
@@ -134,10 +137,10 @@ class SynthEngine{
   this.peak.frequency.setTargetAtTime(f*2,t,tc);
   this.nbp.frequency.setTargetAtTime(p.nf*(.4+n),t,tc);
   this.ng.gain.setTargetAtTime(p.noise*(.15+load*.85)*(.3+n),t,tc);
-  this.pre.gain.setTargetAtTime(.35+.35*load+.15*n,t,tc);
+  this.pre.gain.setTargetAtTime(.35+.35*load+.15*n,t,tc);if(this.turbo)this.turbo.update(rpm,load);
  }
- onShift(){}
- stop(){const t=ctx.currentTime;this.out.gain.setTargetAtTime(0,t,.08);setTimeout(()=>{this.oscs.forEach(h=>h.o.stop());this.ns.stop();this.amOsc.stop();this.out.disconnect()},500)}
+ onShift(up){if(this.turbo)this.turbo.onShift(up)}
+ stop(){const t=ctx.currentTime;this.out.gain.setTargetAtTime(0,t,.08);setTimeout(()=>{if(this.turbo)this.turbo.stop();this.oscs.forEach(h=>h.o.stop());this.ns.stop();this.amOsc.stop();this.out.disconnect()},500)}
 }
 function makeSeamless(buf){ // crossfade tail into head -> click-free loop
  const xf=Math.min(Math.floor(buf.sampleRate*.15),Math.floor(buf.length/3)),len=buf.length-xf;
@@ -164,13 +167,17 @@ const CREDITS={
  cayman:{t:"2006 Porsche Cayman S engine sound",a:"John64",l:"CC BY-SA 3.0",u:"https://commons.wikimedia.org/wiki/File:2006_Porsche_Cayman_S_engine_sound.wav"},
  f218:{t:"Porsche F218 Engine",a:"Johannes Maximilian",l:"CC BY-SA 4.0",u:"https://commons.wikimedia.org/wiki/File:Porsche_F218_Engine.flac"},
  r5:{t:"Renault 5 Maxi Turbo (1985)",a:"Edvvc",l:"CC BY-SA 3.0",u:"https://commons.wikimedia.org/wiki/File:Renault_5_Maxi_Turbo_(1985).ogg"},
+ gto:{t:"Ferrari 250 GTO, Engine Sound",a:"Provo rossi",l:"CC BY 4.0",u:"https://commons.wikimedia.org/wiki/File:Ferrari_250_GTO,_Engine_Sound.ogg"},
+ lfa:{t:"Lexus LFA revving 1LR-GUE (2009)",a:"Altair78",l:"CC BY-SA 4.0",u:"https://commons.wikimedia.org/wiki/File:Lexus_LFA_revving_1LR-GUE_(2009).ogg"},
+ gtr:{t:"Nissan GT-R SpecV",a:"Edvvc",l:"CC BY-SA 3.0",u:"https://commons.wikimedia.org/wiki/File:Nissan_GT-R_SpecV.ogg"},
  saab:{t:"Saab 900 16V Turbo Kaltstart",a:"KunstKonst",l:"CC BY-SA 4.0",u:"https://commons.wikimedia.org/wiki/File:Saab_900_16V_Turbo_Kaltstart.wav"},
 };
 const BANKS={
- v12:{src:["zonda"],s:[2200,3000,3800,4600,5400,6200]},
- v10:{src:["gallardo"],s:[3600,4300,5000,5700,6300]},
+ v12:{src:["gto","zonda"],s:[1100,1550,2200,3000,3800,4600,5400,6200]},
+ v10:{src:["lfa","gallardo"],s:[1000,1450,2300,3000,3600,4300,5000,5700,6300]},
  f6:{src:["f218","cayman"],s:[950,3000,3800,4600,5400,6200,7000]},
  v8:{src:["maserati"],s:[820,1700,2200,2500,3200,4000,4700]},
+ tb:{src:["gtr","r5"],s:[1080,1700,2300,2900,[4100,"i4_4100"],[4800,"i4_4800"],[5600,"i4_5600"]]},
  gen:{src:["saab","r5"],s:[740,2200,2600,4100,4800,5600],file:"i4"},
 };
 const bankCache={};
@@ -178,9 +185,48 @@ function trimBuf(b){const d=b.getChannelData(0);let a=0,z=d.length-1;while(a<z&&
  if(a===0&&z===d.length-1)return b;const o=ctx.createBuffer(1,z-a+1,b.sampleRate);o.getChannelData(0).set(d.subarray(a,z+1));return o}
 async function loadBank(key){
  if(bankCache[key])return bankCache[key];const B=BANKS[key],pre=B.file||key;
- const bufs=await Promise.all(B.s.map(async r=>{const res=await fetch(`sounds/${pre}_${r}.m4a?v=${APP_VERSION}`);if(!res.ok)throw new Error("missing "+pre+"_"+r);
+ const list=B.s.map(e=>Array.isArray(e)?e:[e,pre+"_"+e]);
+ const bufs=await Promise.all(list.map(async([r,f])=>{const res=await fetch(`sounds/${f}.m4a?v=${APP_VERSION}`);if(!res.ok)throw new Error("missing "+f);
   return makeSeamless(trimBuf(await ctx.decodeAudioData(await res.arrayBuffer())))}));
- return bankCache[key]=B.s.map((r,i)=>({rpm:r,buf:bufs[i]}))}
+ return bankCache[key]=list.map(([r],i)=>({rpm:r,buf:bufs[i]}))}
+// ---------- Turbo: spool whistle, wastegate hiss, blow-off valve, flutter (all synthesised) ----------
+let _nb=null;function whiteBuf(){if(_nb&&_nb.sampleRate===ctx.sampleRate)return _nb;const b=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate),d=b.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;return _nb=b}
+class TurboFX{
+ constructor(dest){const t=ctx.currentTime;this.boost=0;this.lt=t;this.lastLoad=0;this.lastBov=0;
+  this.out=ctx.createGain();this.out.gain.value=1;this.out.connect(dest);
+  // whine: sine + 2nd harmonic, slight vibrato (shaft speed wobble)
+  this.wg=ctx.createGain();this.wg.gain.value=0;const hp=ctx.createBiquadFilter();hp.type="highpass";hp.frequency.value=900;this.wg.connect(hp).connect(this.out);
+  this.w1=ctx.createOscillator();this.w1.type="sine";this.w2=ctx.createOscillator();this.w2.type="triangle";
+  const g2=ctx.createGain();g2.gain.value=.25;this.w1.connect(this.wg);this.w2.connect(g2).connect(this.wg);
+  this.lfo=ctx.createOscillator();this.lfo.frequency.value=6.5;this.lfoG=ctx.createGain();this.lfoG.gain.value=25;this.lfo.connect(this.lfoG);this.lfoG.connect(this.w1.frequency);this.lfoG.connect(this.w2.frequency);
+  // spool air rush + wastegate hiss
+  this.ns=ctx.createBufferSource();this.ns.buffer=whiteBuf();this.ns.loop=true;
+  this.sbp=ctx.createBiquadFilter();this.sbp.type="bandpass";this.sbp.Q.value=3;this.sg=ctx.createGain();this.sg.gain.value=0;
+  this.ghp=ctx.createBiquadFilter();this.ghp.type="highpass";this.ghp.frequency.value=4000;this.gg=ctx.createGain();this.gg.gain.value=0;
+  this.ns.connect(this.sbp).connect(this.sg).connect(this.out);this.ns.connect(this.ghp).connect(this.gg).connect(this.out);
+  [this.w1,this.w2,this.lfo,this.ns].forEach(o=>o.start())}
+ update(rpm,load){const t=ctx.currentTime,dt=Math.min(.2,Math.max(0,t-this.lt));this.lt=t;
+  const tgt=Math.max(0,Math.min(1,(rpm-1800)/2800))*Math.max(0,Math.min(1,(load-.2)/.55));
+  this.boost+=(tgt-this.boost)*(1-Math.exp(-dt/(tgt>this.boost?.7:.35)));   // boost lags behind (spool-up)
+  if(this.lastLoad-load>.25&&this.boost>.3)this.bov(this.boost);          // throttle lift -> blow-off
+  this.lastLoad=load;const b=this.boost,f=1800+b*5200+rpm*.15,tc=.05;
+  this.w1.frequency.setTargetAtTime(f,t,tc);this.w2.frequency.setTargetAtTime(f*2,t,tc);this.lfoG.gain.setTargetAtTime(f*.006,t,tc);
+  this.wg.gain.setTargetAtTime((.004+b*b*.11)*(.4+.6*load),t,tc);
+  this.sbp.frequency.setTargetAtTime(f*.6,t,tc);this.sg.gain.setTargetAtTime(b*.07,t,tc);
+  this.gg.gain.setTargetAtTime(b>.8&&load>.7?.035*(b-.8)/.2+.01:0,t,.1)}
+ bov(k){const t=ctx.currentTime;if(t-this.lastBov<.5)return;this.lastBov=t;this.boost*=.25;
+  const s=ctx.createBufferSource();s.buffer=whiteBuf();s.playbackRate.value=1;const bp=ctx.createBiquadFilter();bp.type="bandpass";bp.Q.value=1.1;
+  bp.frequency.setValueAtTime(4200,t);bp.frequency.exponentialRampToValueAtTime(900,t+.45);const g=ctx.createGain();
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.5*k+.1,t+.012);g.gain.setTargetAtTime(0,t+.05,.13);
+  s.connect(bp).connect(g).connect(this.out);s.start(t,Math.random());s.stop(t+.8)}
+ flutter(k){const t=ctx.currentTime;if(t-this.lastBov<.4)return;this.lastBov=t;this.boost*=.35;
+  const s=ctx.createBufferSource();s.buffer=whiteBuf();const bp=ctx.createBiquadFilter();bp.type="bandpass";bp.frequency.value=650;bp.Q.value=1.6;
+  const g=ctx.createGain();g.gain.setValueAtTime(0,t);const n=6+Math.floor(k*6),r=1/(17+Math.random()*7);   // "stu-tu-tu" compressor surge
+  for(let i=0;i<n;i++){const a=(.45*k+.08)*(1-i/n),ti=t+i*r;g.gain.setValueAtTime(0,ti);g.gain.linearRampToValueAtTime(a,ti+r*.25);g.gain.linearRampToValueAtTime(0,ti+r*.9)}
+  s.connect(bp).connect(g).connect(this.out);s.start(t,Math.random());s.stop(t+n*r+.1)}
+ onShift(up){if(up&&this.boost>.3){Math.random()<.5?this.flutter(this.boost):this.bov(this.boost)}}
+ stop(){[this.w1,this.w2,this.lfo,this.ns].forEach(o=>{try{o.stop()}catch(e){}});this.out.disconnect()}
+}
 function crackleBuf(){const n=Math.floor(ctx.sampleRate*.05),b=ctx.createBuffer(1,n,ctx.sampleRate),d=b.getChannelData(0);
  for(let i=0;i<n;i++){const e=Math.exp(-i/(n*.12));d[i]=(Math.random()*2-1)*e}return b}
 class SampleEngine{
@@ -193,7 +239,7 @@ class SampleEngine{
   this.v=bank.map(s=>{const src=ctx.createBufferSource();src.buffer=s.buf;src.loop=true;const g=ctx.createGain();g.gain.value=0;
    src.connect(g).connect(this.sum);src.start(t,Math.random()*s.buf.duration*.9);return{src,g,rpm:s.rpm}});
   this.synthMix=ctx.createGain();this.synthMix.gain.value=0;this.synth=new SynthEngine(p,this.synthMix);this.synthMix.connect(this.sum);
-  this.crk=crackleBuf();this.lastLoad=0;this.lastPop=0;
+  this.crk=crackleBuf();this.lastLoad=0;this.lastPop=0;if(p.turbo)this.turbo=new TurboFX(this.out);
   this.out.gain.setTargetAtTime(1,t,.15)}
  update(rpm,load){const t=ctx.currentTime,tc=.035,v=this.v,lo=v[0].rpm,hi=v[v.length-1].rpm;
   // equal-power crossfade between the two loops whose recorded rpm brackets the current rpm
@@ -210,14 +256,14 @@ class SampleEngine{
   // lift-off at high revs -> exhaust crackle (overrun pops)
   if(this.lastLoad-load>.25&&n>.35)this.pops(4+Math.floor(Math.random()*5));
   if(load<.15&&n>.3&&Math.random()<.02)this.pops(1);
-  this.lastLoad=load}
+  this.lastLoad=load;if(this.turbo)this.turbo.update(rpm,load)}
  pops(k){const t=ctx.currentTime;if(t-this.lastPop<.25)return;this.lastPop=t;
   for(let i=0;i<k;i++){const s=ctx.createBufferSource(),g=ctx.createGain(),f=ctx.createBiquadFilter();s.buffer=this.crk;f.type="bandpass";f.frequency.value=300+Math.random()*1200;f.Q.value=.8;
    s.playbackRate.value=.6+Math.random()*.8;g.gain.value=.5+Math.random()*.9;s.connect(f).connect(g).connect(this.out);s.start(t+i*(.03+Math.random()*.09))}}
- onShift(up){const t=ctx.currentTime,g=this.shift.gain;g.cancelScheduledValues(t);g.setValueAtTime(g.value,t);
+ onShift(up){if(this.turbo)this.turbo.onShift(up);const t=ctx.currentTime,g=this.shift.gain;g.cancelScheduledValues(t);g.setValueAtTime(g.value,t);
   if(up){g.linearRampToValueAtTime(.35,t+.03);g.setTargetAtTime(1,t+.12,.06);if(Math.random()<.7)this.pops(2+Math.floor(Math.random()*3))}
   else{g.linearRampToValueAtTime(1.25,t+.05);g.setTargetAtTime(1,t+.2,.1)}}
- stop(){const t=ctx.currentTime;this.out.gain.setTargetAtTime(0,t,.08);setTimeout(()=>{this.v.forEach(s=>s.src.stop());this.synth.stop(true);this.out.disconnect()},500)}
+ stop(){const t=ctx.currentTime;this.out.gain.setTargetAtTime(0,t,.08);setTimeout(()=>{this.v.forEach(s=>s.src.stop());this.synth.stop(true);if(this.turbo)this.turbo.stop();this.out.disconnect()},500)}
 }
 let buildSeq=0;
 async function buildEngine(){
@@ -363,7 +409,7 @@ $("sim").oninput=unitsUI;
 function modeUI(){const r=S.mode!=="synth";$("modeBtn").textContent=r?"Real recordings":"Synth";$("modeBtn").classList.toggle("on",r)}
 $("modeBtn").onclick=()=>{S.mode=S.mode==="synth"?"real":"synth";save();modeUI();if(st.running)buildEngine()};modeUI();
 $("creditList").innerHTML=Object.values(CREDITS).map(c=>`<li><a style="color:#9cc" href="${c.u}" target="_blank" rel="noopener">${c.t}</a> by ${c.a}, ${c.l}</li>`).join("");
-window.__engineType=()=>engine?engine.constructor.name:"none";
+window.__boost=()=>engine&&engine.turbo?+engine.turbo.boost.toFixed(2):-1;window.__engineType=()=>engine?engine.constructor.name:"none";
 $("refRpm").value=S.refRpm;$("refVal").textContent=S.refRpm;$("refRpm").oninput=e=>{S.refRpm=+e.target.value;$("refVal").textContent=S.refRpm;save()};
 async function addClip(blob,name){
  const c={id:Date.now().toString(36),name:name.slice(0,40),blob};
