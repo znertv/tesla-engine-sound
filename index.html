@@ -35,6 +35,8 @@ small{color:var(--dim)}
 #boost{width:100%;height:100%}
 #boostWrap .lbl{position:absolute;bottom:14%;width:100%;text-align:center}
 #tachBar,#redLbl{display:none}
+#motorRpm{font-size:calc(var(--tach)*.036);color:#8fe3ff;opacity:.85;font-variant-numeric:tabular-nums;min-height:1em}
+#teslaSpecs table{width:100%;border-collapse:collapse;margin-top:6px}#teslaSpecs td{padding:3px 0;border-bottom:1px solid var(--line)}#teslaSpecs td:last-child{text-align:right;color:var(--fg)}
 /* left control panel */
 #dock{position:fixed;left:max(16px,env(safe-area-inset-left));right:max(16px,env(safe-area-inset-right));bottom:max(16px,env(safe-area-inset-bottom));display:flex;justify-content:space-between;align-items:flex-end;gap:16px;z-index:4;pointer-events:none}
 #dock>*{pointer-events:auto}
@@ -89,6 +91,7 @@ small{color:var(--dim)}
 </style></head><body>
 <canvas id="scene"></canvas>
 <div id="topbar" class="glass">
+  <button id="teslaChip" title="My Tesla">🚘 <span id="teslaName">My Tesla</span></button>
   <button id="sceneBtn" title="Scenery">🏜 <span id="sceneName">Desert</span></button>
   <button id="units" class="toggle">km/h</button>
   <button id="modeBtn" class="toggle on">Real recordings</button>
@@ -99,7 +102,7 @@ small{color:var(--dim)}
     <canvas id="tach"></canvas>
     <div id="shift"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
     <div id="digital"><div id="spd">0</div><div id="unitLbl">km/h</div>
-      <div id="gearBox"><span id="gear">N</span><span id="rpm">0</span></div></div>
+      <div id="gearBox"><span id="gear">N</span><span id="rpm">0</span></div><div id="motorRpm"></div></div>
     <div id="boostWrap"><canvas id="boost"></canvas><div class="lbl">Boost</div></div>
   </div>
   <div id="tachBar"></div><span id="redLbl">8000</span>
@@ -108,10 +111,10 @@ small{color:var(--dim)}
 <section id="panel" class="glass">
   <button id="start">START</button>
   <div class="row"><button id="simBtn" class="toggle">Simulate</button><button id="testBtn">Test sound</button></div>
-  <div id="simRow"><span class="lbl">Sim speed · <span id="simVal">0</span></span><input type="range" id="sim" min="0" max="300" step="1" value="0"></div>
+  <div id="simRow"><span class="lbl" style="display:flex;justify-content:space-between;align-items:center">Sim speed · <span id="simVal">0</span><button id="launchBtn" style="min-height:36px;padding:4px 12px;font-size:13px">🚀 Launch 0-100</button></span><input type="range" id="sim" min="0" max="300" step="1" value="0"></div>
   <div><span class="lbl">Volume</span><input type="range" id="vol" min="0" max="1" step="0.01"></div>
   <div id="status" class="warn"><span class="dot"></span><span id="statusTxt">GPS idle – press Start</span></div>
-  <div class="row" style="justify-content:space-between"><span id="audioState">Audio: not started</span><small id="ver">v1.4.1</small></div>
+  <div class="row" style="justify-content:space-between"><span id="audioState">Audio: not started</span><small id="ver">v1.5.0</small></div>
   <div id="audioErr"></div>
 </section>
 <section id="picker" class="glass">
@@ -122,6 +125,9 @@ small{color:var(--dim)}
 </div>
 <aside id="drawer" class="glass">
   <button id="closeDrawer">✕</button><h2>Settings</h2>
+  <div class="lbl" style="margin-top:14px">My Tesla</div>
+  <div class="row"><select id="teslaSel" style="flex:1;min-width:0"></select></div>
+  <div id="teslaSpecs" style="font-size:14px;color:var(--dim)"></div>
   <div class="lbl" style="margin-top:14px">Your own recording</div>
   <div class="row"><input type="file" id="file" accept="audio/*" style="font-size:15px;flex:1"></div>
   <div class="row"><input type="text" id="url" placeholder="…or audio URL" style="flex:1;min-width:0"><button id="urlBtn">Load</button></div>
@@ -158,9 +164,9 @@ const PRESETS={
    noise:.3,nf:3500,dist:2.5,cut:[600,5],q:3,wobble:.04,bright:.8},
 };
 // ---------- Settings ----------
-const APP_VERSION="1.4.1";
+const APP_VERSION="1.5.0";
 let S0={};try{S0=JSON.parse(localStorage.getItem("engineSettings")||"{}")}catch(e){}
-const S=Object.assign({car:"v12",vol:.7,units:"kmh",refRpm:3000,mode:"real"},S0);
+const S=Object.assign({tesla:"",car:"v12",vol:.7,units:"kmh",refRpm:3000,mode:"real"},S0);
 if(!(S.vol>=0.05))S.vol=.7; // never start silent
 const save=()=>localStorage.setItem("engineSettings",JSON.stringify(S));
 const $=id=>document.getElementById(id);
@@ -351,9 +357,42 @@ async function buildEngine(){
    if(my!==buildSeq||!st.running||!engine)return;const old=engine;engine=new SampleEngine(bank,p);old.stop();setStatusTmp("")}
   catch(e){setStatusTmp("");audioErr("recordings failed to load, using synth ("+(e&&e.message||e)+")")}}
 }
-function preset(){return S.car.startsWith("c:")?{idle:900,red:8000,ratios:[9,14,19.5,25,31,37.5]}:PRESETS[S.car]}
+function basePreset(){return S.car.startsWith("c:")?{idle:900,red:8000,ratios:[9,14,19.5,25,31,37.5]}:PRESETS[S.car]}
+// ---------- My Tesla: real specs drive the virtual gearbox ----------
+// top: mph (factory/governed), t60: 0-60 mph s, hp, lb: curb weight, ratio: single-speed reduction (rear/primary unit),
+// mmax: approx. max motor rpm, tire: stock tire. Sources (fetched Oct 2026):
+//  [KBB3] kbb.com/tesla/model-3/2026/specs  [KBBS] kbb.com/tesla/model-s/2026/specs  [KBBX] kbb.com/tesla/model-x/2026/specs
+//  [KBBY] kbb.com/tesla/model-y/2026/specs  [CDY] caranddriver.com/tesla/model-y  [CD3] caranddriver.com/reviews/a68853621 (2026 Model 3 RWD test)
+//  [T3] tesla.com/model3 (Model 3 RWD 5.8 s, 3,759 lb)  [TCT] tesla.com/cybertruck  [WY] en.wikipedia.org/wiki/Tesla_Model_Y (Performance 460 hp, 155 mph)
+//  [OM] Tesla Model S/X owner's manual "Subsystems": S/X 7.56:1 front, 9.04:1 rear; Plaid 7.56:1 all motors
+//  [ANL] anl.gov/taps/d3-2020-tesla-model-3 (9.04:1)  [IEV] insideevs.com/news/518692 (Model 3/Y 9.0363:1, 18,447 rpm @ 262 km/h)
+//  [CDP] caranddriver.com/reviews/a38423992 (Plaid rotors up to 20,000 rpm)  [CTR] Cybertruck ~15:1, 18-19k rpm (owner-forum/Wikipedia reports, not Tesla-published)
+//  [RD] Tesla Roadster 2nd gen announcement (2017): 0-60 1.9 s, 250+ mph — not in production; ratio/tire not published
+const TESLAS={
+ m3_rwd:{n:"Model 3 RWD",g:"Model 3",top:125,t60:5.8,hp:286,lb:3759,ratio:9.04,mmax:18000,tire:"235/45R18",src:"T3, CD3, ANL"},
+ m3_lr:{n:"Model 3 Long Range AWD",g:"Model 3",top:125,t60:4.2,hp:425,lb:4034,ratio:9.04,mmax:18000,tire:"235/45R18",src:"KBB3, CD3, ANL"},
+ m3_p:{n:"Model 3 Performance",g:"Model 3",top:163,t60:2.9,hp:510,lb:4054,ratio:9.04,mmax:18447,tire:"245/35R20",src:"KBB3, T3, IEV"},
+ my_rwd:{n:"Model Y RWD",g:"Model Y",top:125,t60:5.4,hp:null,lb:4178,ratio:9.04,mmax:18000,tire:"255/45R19",src:"CDY, IEV"},
+ my_lr:{n:"Model Y Long Range AWD",g:"Model Y",top:125,t60:4.6,hp:null,lb:4396,ratio:9.04,mmax:18000,tire:"255/45R19",src:"KBBY, IEV"},
+ my_p:{n:"Model Y Performance",g:"Model Y",top:155,t60:3.3,hp:460,lb:4416,ratio:9.04,mmax:18447,tire:"255/35R21",src:"KBBY, WY, IEV"},
+ ms_lr:{n:"Model S Long Range",g:"Model S",top:130,t60:3.1,hp:670,lb:4560,ratio:9.04,mmax:18000,tire:"245/45R19",src:"KBBS, OM"},
+ ms_plaid:{n:"Model S Plaid",g:"Model S",top:149,t60:2.0,hp:1020,lb:4776,ratio:7.56,mmax:20000,tire:"265/35R21",src:"KBBS, OM, CDP (200 mph with Track Package)"},
+ mx_lr:{n:"Model X Long Range",g:"Model X",top:155,t60:3.8,hp:670,lb:5152,ratio:9.04,mmax:18000,tire:"265/45R20",src:"KBBX, OM"},
+ mx_plaid:{n:"Model X Plaid",g:"Model X",top:163,t60:2.5,hp:1020,lb:5434,ratio:7.56,mmax:20000,tire:"265/35R22",src:"KBBX, OM"},
+ ct_awd:{n:"Cybertruck AWD",g:"Cybertruck",top:112,t60:4.1,hp:600,lb:6634,ratio:15.0,mmax:19000,tire:"285/65R20",src:"TCT, CTR (ratio estimate)"},
+ ct_beast:{n:"Cyberbeast",g:"Cybertruck",top:130,t60:2.6,hp:845,lb:6863,ratio:15.0,mmax:19000,tire:"285/65R20",src:"TCT, CTR (ratio estimate)"},
+ roadster:{n:"Roadster (announced)",g:"Roadster",top:250,t60:1.9,hp:null,lb:null,ratio:null,mmax:null,tire:null,src:"RD (announced, not in production)"},
+};
+for(const T of Object.values(TESLAS)){T.kmh=T.top*1.609344;T.fullAcc=96.56/T.t60;                     // average 0-60 accel, km/h per s
+ if(T.tire){const[w,a,r]=T.tire.match(/(\d+)\/(\d+)R(\d+)/).slice(1).map(Number);T.diam=(r*25.4+2*w*a/100)/1000}}  // tire diameter, m
+function motorRpm(kmh){const T=TESLAS[S.tesla];if(!T||!T.diam)return null;return kmh/3.6/(Math.PI*T.diam)*T.ratio*60}
+let _pc={};function preset(){const b=basePreset(),T=TESLAS[S.tesla];if(!T)return b;const key=S.car+"|"+S.tesla;if(_pc.key===key)return _pc.p;
+ const f=T.kmh/(b.red*.97/1000*b.ratios[b.ratios.length-1]);                                   // top gear redline ≈ the Tesla's top speed
+ const perf=Math.max(0,Math.min(1,(6-T.t60)/4));                                                 // 0 = 6 s car, 1 = 2 s car
+ const p=Object.assign({},b,{ratios:b.ratios.map(r=>r*f),fullAcc:T.fullAcc,upBase:.48+.2*perf});  // quicker cars hold gears longer
+ _pc={key,p};return p}
 // ---------- Speed / gear model ----------
-const st={target:0,accel:0,fixT:0,fixSpeed:0,smooth:0,gear:0,rpm:800,load:0,cut:0,last:null,running:false,sim:false};
+const st={simT:0,launch:false,target:0,accel:0,fixT:0,fixSpeed:0,smooth:0,gear:0,rpm:800,load:0,cut:0,last:null,running:false,sim:false};
 function onFix(pos){
  const c=pos.coords,now=performance.now();let v=c.speed; // m/s
  if(v==null||isNaN(v)){if(st.last){const dt=(pos.timestamp-st.last.t)/1000;if(dt>0.2){v=hav(st.last.c,c)/dt}else v=st.fixSpeed}else v=0}
@@ -371,16 +410,21 @@ function tick(){
  const now=performance.now(),dt=Math.min(.1,(now-lastTick)/1000);lastTick=now;
  // predicted speed between fixes: extrapolate with last accel (max 1.5 s), then exponential smoothing
  let target;
- if(st.sim)target=+$("sim").value*(S.units==="mph"?1.609344:1);
+ if(st.sim){const want=+$("sim").value*(S.units==="mph"?1.609344:1),T=TESLAS[S.tesla];
+  // simulate respects the car: speed changes at most at its real acceleration (launch = exactly the 0-100 rate)
+  const upRate=st.launch?(T?100/(T.t60*1.06):100/6):(T?T.fullAcc*1.1:20);st.simT+=Math.max(-30*dt,Math.min(upRate*dt,want-st.simT));
+  if(st.launch&&st.simT>=want-.1)st.launch=false;target=st.simT}
  else{const since=Math.min(1.5,(now-st.fixT)/1000);target=st.fixT?Math.max(0,st.fixSpeed+st.accel*since*.8):0}
- const prev=st.smooth; st.smooth+=(target-st.smooth)*(1-Math.exp(-dt/(st.sim?.6:.45)));
+ const prev=st.smooth; st.smooth+=(target-st.smooth)*(1-Math.exp(-dt/(st.sim?.15:.45)));
  const acc=(st.smooth-prev)/Math.max(dt,1e-3); // km/h per s
  const p=preset();
  // throttle/load factor from acceleration (~15 km/h/s = full)
- let load=Math.max(0.05,Math.min(1,.25+acc/15)); if(acc<-1)load=.05;
+ const fa=p.fullAcc||15; // the selected Tesla's own 0-60 average = full throttle
+ let load=Math.max(0.05,Math.min(1,.22+acc/(fa*.8))); if(acc<-1)load=.05;
  // gear selection
+ if(st.gear>p.ratios.length-1)st.gear=p.ratios.length-1;if(!isFinite(st.rpm))st.rpm=p.idle;if(!isFinite(st.smooth))st.smooth=0;if(!isFinite(st.simT))st.simT=0;
  const rpmIn=g=>st.smooth/p.ratios[g]*1000;
- const up=p.idle+(p.red-p.idle)*(.55+.38*load), down=p.idle+(p.red-p.idle)*.22;
+ const ub=p.upBase||.55,up=p.idle+(p.red-p.idle)*(ub+(.93-ub)*load), down=p.idle+(p.red-p.idle)*.22;
  if(st.smooth<3)st.gear=0;
  else{if(rpmIn(st.gear)>up&&st.gear<p.ratios.length-1){st.gear++;st.cut=.16;if(engine&&st.running)engine.onShift(true)}
   else if(st.gear>0&&rpmIn(st.gear)<down){st.gear--;if(engine&&st.running)engine.onShift(false)}}
@@ -395,7 +439,7 @@ function tick(){
  // UI
  const shown=S.units==="mph"?st.smooth/1.609344:st.smooth;
  $("spd").textContent=Math.round(shown);$("rpm").textContent=Math.round(st.rpm/10)*10;
- $("gear").textContent=st.smooth<3?"N":st.gear+1;$("tachBar").style.width=(st.rpm/p.red*100)+"%";$("redLbl").textContent=p.red;
+ $("gear").textContent=st.smooth<3?"N":st.gear+1;{const m=motorRpm(st.smooth);$("motorRpm").textContent=m==null?"":"motor "+(Math.round(m/10)*10).toLocaleString()+" rpm"}$("tachBar").style.width=(st.rpm/p.red*100)+"%";$("redLbl").textContent=p.red;
 }
 setInterval(tick,30);
 // ---------- GPS ----------
@@ -506,6 +550,20 @@ function renderCards(){const s=$("car"),box=$("cards");box.innerHTML="";
   b.onclick=()=>{if(s.value===o.value)return;s.value=o.value;s.dispatchEvent(new Event("change"));renderCards()};box.append(b)}
  const cur=s.options[s.selectedIndex];$("selName").textContent=cur?cur.text.replace(/ – turbo whistle/,""):"—";
  $("boostWrap").style.display=(PRESETS[s.value]&&PRESETS[s.value].turbo)?"block":"none"}
+function teslaUI(){const T=TESLAS[S.tesla],sel=$("teslaSel");
+ if(!sel.options.length){sel.add(new Option("Not set (generic gearing)",""));let og=null,gname="";
+  for(const[k,t]of Object.entries(TESLAS)){if(t.g!==gname){og=document.createElement("optgroup");og.label=gname=t.g;sel.append(og)}og.append(new Option(t.n,k))}}
+ sel.value=S.tesla in TESLAS?S.tesla:"";$("teslaName").textContent=T?T.n:"My Tesla";
+ if(!T){$("teslaSpecs").innerHTML="<p>Pick your Tesla so the virtual gearbox tops out at its real top speed and full throttle matches its real acceleration.</p>";return}
+ const p=preset(),r=(x,y)=>`<tr><td>${x}</td><td>${y}</td></tr>`,kmh=Math.round(T.kmh),mrTop=motorRpm(T.kmh);
+ $("teslaSpecs").innerHTML=`<table>${r("Top speed",`${T.top} mph · ${kmh} km/h`)}${r("0-60 mph",T.t60+" s")}${r("Power",T.hp?T.hp+" hp":"not published")}${r("Curb weight",T.lb?T.lb.toLocaleString()+" lb":"—")}
+  ${r("Reduction ratio",T.ratio?T.ratio+":1":"not published")}${r("Tire",T.tire||"—")}${r("Motor rpm at top speed",mrTop?Math.round(mrTop).toLocaleString():"—")}
+  ${r("Full throttle at",(T.fullAcc/3.6/9.81).toFixed(2)+" g")}${r("Virtual top gear",Math.round(p.ratios[p.ratios.length-1]*p.red/1000)+" km/h @ redline")}</table><small>Sources: ${T.src}</small>`}
+$("teslaSel").onchange=e=>{S.tesla=e.target.value;save();teslaUI()};$("teslaChip").onclick=()=>$("drawer").classList.add("open");
+$("car").addEventListener("change",()=>setTimeout(teslaUI,0));teslaUI();
+$("launchBtn").onclick=()=>{if(!st.sim)$("simBtn").click();if(!st.running)$("start").click();
+ $("sim").value=Math.round(S.units==="mph"?62:100);$("sim").dispatchEvent(new Event("input"));st.simT=Math.min(st.simT,st.smooth);st.launch=true};
+window.__tesla=()=>({sel:S.tesla,ratios:preset().ratios.map(x=>+x.toFixed(2)),motor:Math.round(motorRpm(st.smooth)||0),spd:+st.smooth.toFixed(1),load:+st.load.toFixed(2),gear:st.gear+1});
 new MutationObserver(renderCards).observe($("car"),{childList:true});$("car").addEventListener("change",()=>setTimeout(renderCards,0));
 $("pickToggle").onclick=()=>{const c=$("picker").classList.toggle("collapsed");$("pickToggle").textContent=c?"Show sounds":"Hide sounds"};
 if(matchMedia("(max-width:900px) and (orientation:portrait), (max-height:500px)").matches){$("picker").classList.add("collapsed");$("pickToggle").textContent="Show sounds"}
