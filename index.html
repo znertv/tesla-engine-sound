@@ -1,66 +1,138 @@
 <!DOCTYPE html>
 <html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0d12">
 <title>Engine Sound</title>
 <style>
-:root{--bg:#0b0d10;--card:#161a20;--fg:#e8edf2;--dim:#8a96a3;--acc:#ff3b2f;--ok:#2ecc71;--warn:#f1c40f}
-*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,sans-serif;user-select:none}
-main{display:grid;grid-template-columns:1.2fr 1fr;gap:18px;padding:18px;max-width:1400px;margin:auto}
-.card{background:var(--card);border-radius:18px;padding:18px}
-h1{margin:0 0 6px;font-size:22px;color:var(--dim);font-weight:600;letter-spacing:.08em;text-transform:uppercase}
-.gauges{display:flex;gap:18px;justify-content:space-around;align-items:center}
-.gauge{text-align:center}.big{font-size:110px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
-.unit{font-size:24px;color:var(--dim)}
-.tach{height:34px;background:#222830;border-radius:10px;overflow:hidden;margin-top:16px;position:relative}
-.tach>div{height:100%;width:0;background:linear-gradient(90deg,#2ecc71,#f1c40f 70%,#ff3b2f 88%)}
-.tachlbl{display:flex;justify-content:space-between;color:var(--dim);font-size:20px;margin-top:6px}
-#gear{font-size:80px;font-weight:800;color:var(--acc)}
-button,select,input[type=text]{font-size:22px;border-radius:14px;border:0;padding:16px 20px;background:#252b33;color:var(--fg)}
-button{cursor:pointer;min-height:64px}button:active{transform:scale(.97)}
-#start{width:100%;font-size:40px;font-weight:800;padding:28px;background:var(--acc)}#start.on{background:#444c57}
-.row{display:flex;gap:12px;align-items:center;margin:14px 0;flex-wrap:wrap}.row label{min-width:110px;color:var(--dim);font-size:20px}
-select{flex:1;min-width:0}
-input[type=range]{flex:1;height:48px;accent-color:var(--acc)}
-#status{font-size:20px;padding:12px 16px;border-radius:12px;background:#222830}
-.dot{display:inline-block;width:16px;height:16px;border-radius:50%;background:var(--dim);margin-right:10px;vertical-align:-2px}
+:root{--fg:#f2f5f8;--dim:#a9b4c0;--acc:#ff4d2e;--acc2:#38d6ff;--ok:#2ee6a0;--warn:#ffcc33;--glass:rgba(14,18,26,.58);--line:rgba(255,255,255,.12)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:#0b0d12;color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;user-select:none;-webkit-user-select:none}
+#scene{position:fixed;inset:0;width:100%;height:100%;display:block}
+.glass{background:var(--glass);backdrop-filter:blur(14px) saturate(1.2);-webkit-backdrop-filter:blur(14px) saturate(1.2);border:1px solid var(--line);border-radius:22px;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+button,select,input[type=text]{font:inherit;color:var(--fg);border:1px solid var(--line);background:rgba(255,255,255,.08);border-radius:14px;padding:12px 16px;min-height:52px}
+button{cursor:pointer;font-weight:600}button:active{transform:scale(.97)}
+.toggle.on{background:var(--acc2);color:#04131a;border-color:transparent}
+input[type=range]{width:100%;height:44px;accent-color:var(--acc2)}
+small{color:var(--dim)}
+.lbl{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+/* top bar */
+#topbar{position:fixed;top:max(12px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;gap:8px;padding:8px;z-index:5;align-items:center}
+#topbar button{min-height:46px;padding:8px 14px;font-size:15px}
+#sceneName{min-width:96px}
+/* cluster */
+#cluster{position:fixed;top:clamp(70px,9vh,110px);left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:18px;z-index:3;pointer-events:none}
+#tachWrap{position:relative;width:var(--tach);height:var(--tach);--tach:min(46vh,440px)}
+#tach{width:100%;height:100%}
+#digital{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-shadow:0 2px 12px rgba(0,0,0,.6)}
+#spd{font-size:calc(var(--tach)*.27);font-weight:800;line-height:.95;font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+#unitLbl{font-size:calc(var(--tach)*.05);color:var(--dim);letter-spacing:.2em;text-transform:uppercase}
+#gearBox{margin-top:calc(var(--tach)*.03);display:flex;gap:10px;align-items:baseline}
+#gear{font-size:calc(var(--tach)*.11);font-weight:800;color:var(--acc2)}
+#rpm{font-size:calc(var(--tach)*.045);color:var(--dim);font-variant-numeric:tabular-nums}
+#shift{position:absolute;left:50%;top:calc(var(--tach)*-.02);transform:translateX(-50%);display:flex;gap:6px}
+#shift i{width:calc(var(--tach)*.045);height:calc(var(--tach)*.045);border-radius:50%;background:rgba(255,255,255,.12);display:block;transition:background .05s}
+#boostWrap{width:calc(var(--tach)*.4);height:calc(var(--tach)*.4);position:absolute;right:calc(var(--tach)*-.42);bottom:0;display:none}
+#boost{width:100%;height:100%}
+#boostWrap .lbl{position:absolute;bottom:14%;width:100%;text-align:center}
+#tachBar,#redLbl{display:none}
+/* left control panel */
+#dock{position:fixed;left:max(16px,env(safe-area-inset-left));right:max(16px,env(safe-area-inset-right));bottom:max(16px,env(safe-area-inset-bottom));display:flex;justify-content:space-between;align-items:flex-end;gap:16px;z-index:4;pointer-events:none}
+#dock>*{pointer-events:auto}
+#panel{width:min(340px,30vw);padding:16px;display:flex;flex-direction:column;gap:12px}
+#start{width:100%;font-size:30px;font-weight:800;padding:20px;min-height:84px;background:var(--acc);border:0;border-radius:18px;letter-spacing:.06em;box-shadow:0 6px 24px rgba(255,77,46,.45)}
+#start.on{background:#3a414c;box-shadow:none}
+.row{display:flex;gap:10px;align-items:center}
+.row>button{flex:1}
+#simRow{display:none;flex-direction:column;align-items:stretch;gap:2px}
+#simVal{font-size:14px;color:var(--dim)}
+#status{font-size:14px;padding:10px 12px;border-radius:12px;background:rgba(0,0,0,.25)}
+.dot{display:inline-block;width:11px;height:11px;border-radius:50%;background:var(--dim);margin-right:8px;vertical-align:0}
 .ok .dot{background:var(--ok)}.warn .dot{background:var(--warn)}.err .dot{background:var(--acc)}
-.toggle.on{background:var(--acc)}small{color:var(--dim);font-size:16px}
-#customList button{font-size:16px;min-height:44px;padding:8px 12px}
-@media(max-width:900px){main{grid-template-columns:1fr}.big{font-size:80px}}
+#audioState{font-size:13px;color:var(--dim);white-space:nowrap}
+#audioErr{display:none;color:#ff8b78;font-size:14px}
+/* sound picker */
+#picker{width:min(560px,40vw);max-height:calc(100vh - 140px);padding:16px;display:flex;flex-direction:column;gap:10px}
+#picker header{display:flex;justify-content:space-between;align-items:center;gap:10px}
+#selName{font-size:22px;font-weight:700}
+#cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;overflow:auto;padding:2px}
+#picker.collapsed #cards{display:none}
+.card{text-align:left;padding:12px 14px;min-height:76px;border-radius:16px;display:flex;flex-direction:column;justify-content:space-between;gap:4px;background:rgba(255,255,255,.06)}
+.card b{font-size:16px}.card span{font-size:12px;color:var(--dim);font-weight:500}
+.card.sel{border-color:var(--acc2);background:rgba(56,214,255,.16);box-shadow:inset 0 0 0 1px var(--acc2)}
+.card .art{height:6px;border-radius:3px;background:linear-gradient(90deg,var(--c1),var(--c2))}
+#car{display:none}
+/* drawer */
+#drawer{position:fixed;top:0;right:0;height:100%;width:min(460px,100vw);z-index:9;padding:20px;padding-top:max(20px,env(safe-area-inset-top));overflow:auto;transform:translateX(105%);transition:transform .25s ease;border-radius:22px 0 0 22px}
+#drawer.open{transform:none}
+#drawer h2{margin:0 0 6px;font-size:20px}
+#drawer .row{margin:12px 0;flex-wrap:wrap}#drawer label{min-width:90px;color:var(--dim)}
+#customList button{font-size:14px;min-height:40px;padding:6px 10px;margin:4px 4px 0 0}
+#credits a{color:#8fe3ff}
+#closeDrawer{float:right}
+/* responsive */
+@media (max-width:900px) and (orientation:portrait){
+ #cluster{top:72px;flex-direction:column;gap:6px}#tachWrap{--tach:min(72vw,31vh)}#boostWrap{width:calc(var(--tach)*.34);height:calc(var(--tach)*.34);right:calc(var(--tach)*-.16);bottom:auto;top:calc(var(--tach)*-.06)}
+ #dock{left:10px;right:10px;bottom:max(10px,env(safe-area-inset-bottom));flex-direction:column-reverse;align-items:stretch;gap:8px}#panel{width:auto;padding:12px;gap:8px}
+ #start{font-size:24px;min-height:58px;padding:10px}#panel input[type=range]{height:34px}#panel .row button{min-height:46px}
+ #picker{width:auto;max-height:none;padding:8px 12px}#picker header button{min-height:42px;padding:6px 12px}
+ #picker.collapsed{padding:10px 12px}#cards{grid-template-columns:repeat(2,1fr);max-height:22vh}
+ #selName{font-size:17px}#topbar{width:calc(100% - 20px);justify-content:center;flex-wrap:wrap}#topbar button{padding:6px 10px;font-size:14px;min-height:40px}
+ #status{font-size:13px;padding:8px}
+}
+@media (max-height:500px) and (orientation:landscape){
+ #cluster{top:8px}#tachWrap{--tach:min(66vh,300px)}#topbar{top:auto;bottom:8px;padding:5px;gap:5px}#topbar button{min-height:40px;padding:5px 10px;font-size:13px}
+ #boostWrap{width:calc(var(--tach)*.3);height:calc(var(--tach)*.3);right:auto;left:50%;transform:translateX(-50%);bottom:calc(var(--tach)*-.2)}#boostWrap .lbl{display:none}#testBtn{font-size:14px}
+ #dock{left:8px;right:8px;bottom:8px}#panel{width:min(260px,32vw);padding:10px;gap:6px}#start{font-size:20px;min-height:52px;padding:8px}
+ #picker{width:min(300px,32vw);max-height:calc(100vh - 70px);padding:10px}#cards{grid-template-columns:1fr}
+ .card{min-height:48px;padding:8px}#selName{font-size:16px}#status{display:none}
+}
 </style></head><body>
-<main>
-<section class="card">
-  <h1>Engine Sound</h1>
-  <div class="gauges">
-    <div class="gauge"><div class="big" id="spd">0</div><div class="unit" id="unitLbl">km/h</div></div>
-    <div class="gauge"><div id="gear">N</div><div class="unit">gear</div></div>
-    <div class="gauge"><div class="big" id="rpm" style="font-size:64px">0</div><div class="unit">rpm</div></div>
+<canvas id="scene"></canvas>
+<div id="topbar" class="glass">
+  <button id="sceneBtn" title="Scenery">🏜 <span id="sceneName">Desert</span></button>
+  <button id="units" class="toggle">km/h</button>
+  <button id="modeBtn" class="toggle on">Real recordings</button>
+  <button id="settingsBtn" title="Settings" aria-label="Settings">⚙</button>
+</div>
+<div id="cluster">
+  <div id="tachWrap">
+    <canvas id="tach"></canvas>
+    <div id="shift"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div id="digital"><div id="spd">0</div><div id="unitLbl">km/h</div>
+      <div id="gearBox"><span id="gear">N</span><span id="rpm">0</span></div></div>
+    <div id="boostWrap"><canvas id="boost"></canvas><div class="lbl">Boost</div></div>
   </div>
-  <div class="tach"><div id="tachBar"></div></div>
-  <div class="tachlbl"><span>0</span><span id="redLbl">8000</span></div>
-  <div class="row" style="margin-top:22px"><button id="start">START</button></div>
-  <div class="row"><button id="testBtn" style="flex:1">Test sound</button><span id="audioState" style="font-size:18px;color:var(--dim)">Audio: not started</span></div>
-  <div id="audioErr" style="display:none;color:var(--acc);font-size:18px;margin:8px 0"></div>
+  <div id="tachBar"></div><span id="redLbl">8000</span>
+</div>
+<div id="dock">
+<section id="panel" class="glass">
+  <button id="start">START</button>
+  <div class="row"><button id="simBtn" class="toggle">Simulate</button><button id="testBtn">Test sound</button></div>
+  <div id="simRow"><span class="lbl">Sim speed · <span id="simVal">0</span></span><input type="range" id="sim" min="0" max="300" step="1" value="0"></div>
+  <div><span class="lbl">Volume</span><input type="range" id="vol" min="0" max="1" step="0.01"></div>
   <div id="status" class="warn"><span class="dot"></span><span id="statusTxt">GPS idle – press Start</span></div>
+  <div class="row" style="justify-content:space-between"><span id="audioState">Audio: not started</span><small id="ver">v1.4.0</small></div>
+  <div id="audioErr"></div>
 </section>
-<section class="card">
-  <div class="row"><label>Car</label><select id="car"></select></div>
-  <div class="row"><label>Volume</label><input type="range" id="vol" min="0" max="1" step="0.01"></div>
-  <div class="row"><label>Units</label><button id="units" class="toggle">km/h</button>
-    <button id="simBtn" class="toggle">Simulate</button></div>
-  <div class="row"><label>Sound</label><button id="modeBtn" class="toggle on" style="flex:1">Real recordings</button></div>
-  <div class="row" id="simRow" style="display:none"><label>Sim speed</label><input type="range" id="sim" min="0" max="300" step="1" value="0"><span id="simVal" style="min-width:90px">0</span></div>
-  <hr style="border-color:#2a3038">
-  <div class="row"><label>Recording</label><input type="file" id="file" accept="audio/*" style="font-size:18px;flex:1"></div>
+<section id="picker" class="glass">
+  <header><div><div class="lbl">Selected sound</div><div id="selName">—</div></div><button id="pickToggle">Hide sounds</button></header>
+  <select id="car"></select>
+  <div id="cards"></div>
+</section>
+</div>
+<aside id="drawer" class="glass">
+  <button id="closeDrawer">✕</button><h2>Settings</h2>
+  <div class="lbl" style="margin-top:14px">Your own recording</div>
+  <div class="row"><input type="file" id="file" accept="audio/*" style="font-size:15px;flex:1"></div>
   <div class="row"><input type="text" id="url" placeholder="…or audio URL" style="flex:1;min-width:0"><button id="urlBtn">Load</button></div>
-  <div class="row"><label>Clip RPM</label><input type="range" id="refRpm" min="1000" max="8000" step="100"><span id="refVal" style="min-width:80px"></span></div>
-  <small id="ver">v1.3.0</small><br><small>Clip RPM = engine speed your recording was made at (should be a steady rev). Saved clips persist on this device.</small>
+  <div class="row"><label>Clip RPM</label><input type="range" id="refRpm" min="1000" max="8000" step="100" style="flex:1"><span id="refVal" style="min-width:60px"></span></div>
+  <small>Clip RPM = engine speed your recording was made at (should be a steady rev). Saved clips persist on this device.</small>
   <div id="customList"></div>
-  <details id="credits" style="margin-top:14px;font-size:16px;color:var(--dim)"><summary style="font-size:18px;cursor:pointer">Sound credits</summary>
+  <div class="row"><label>Scenery</label><button id="animBtn" class="toggle on">Animated</button></div>
+  <details id="credits" open style="margin-top:14px;font-size:14px;color:var(--dim)"><summary style="font-size:16px;cursor:pointer;color:var(--fg)">Sound credits</summary>
   <p>"Real recordings" mode uses short loops cut, pitch-steadied and loudness-normalised from these freely licensed recordings (modified from the originals). The derived loops are shared under the same licences.</p>
   <ul id="creditList"></ul></details>
-</section>
-</main>
+</aside>
 <script>
 "use strict";
 // ---------- Presets ----------
@@ -86,7 +158,7 @@ const PRESETS={
    noise:.3,nf:3500,dist:2.5,cut:[600,5],q:3,wobble:.04,bright:.8},
 };
 // ---------- Settings ----------
-const APP_VERSION="1.3.0";
+const APP_VERSION="1.4.0";
 let S0={};try{S0=JSON.parse(localStorage.getItem("engineSettings")||"{}")}catch(e){}
 const S=Object.assign({car:"v12",vol:.7,units:"kmh",refRpm:3000,mode:"real"},S0);
 if(!(S.vol>=0.05))S.vol=.7; // never start silent
@@ -422,4 +494,102 @@ $("urlBtn").onclick=async()=>{const u=$("url").value.trim();if(!u)return;
 unitsUI();
 DB.open().then(()=>DB.all()).then(a=>{customs=a;fillCars()}).catch(()=>fillCars());
 fillCars();
+// ================= v1.4 immersive UI =================
+const UI={scene:localStorage.getItem("scene")||"desert",anim:localStorage.getItem("anim")!=="0",dist:0,boost:0};
+const CARD_META={v12:["Naturally aspirated V12 howl","#ff3b2f","#ffb300"],v10:["High-rev V10 shriek","#7bd400","#ffe600"],
+ f6:["Flat-six wail","#e0e0e0","#ff5a36"],v8:["Deep V8 rumble","#3d7bff","#c33dff"],tb:["Twin-turbo V6 + whistle & BOV","#38d6ff","#7a5cff"],
+ gen:["Turbo four, light & raspy","#2ee6a0","#38d6ff"]};
+function renderCards(){const s=$("car"),box=$("cards");box.innerHTML="";
+ for(const o of s.options){const b=document.createElement("button");b.className="card"+(o.value===s.value?" sel":"");
+  const m=CARD_META[o.value]||["Your recording","#ffcc33","#ff4d2e"];
+  b.innerHTML=`<div class="art" style="--c1:${m[1]};--c2:${m[2]}"></div><b></b><span></span>`;b.querySelector("b").textContent=o.text.replace(/ – turbo whistle/,"");b.querySelector("span").textContent=m[0];
+  b.onclick=()=>{if(s.value===o.value)return;s.value=o.value;s.dispatchEvent(new Event("change"));renderCards()};box.append(b)}
+ const cur=s.options[s.selectedIndex];$("selName").textContent=cur?cur.text.replace(/ – turbo whistle/,""):"—";
+ $("boostWrap").style.display=(PRESETS[s.value]&&PRESETS[s.value].turbo)?"block":"none"}
+new MutationObserver(renderCards).observe($("car"),{childList:true});$("car").addEventListener("change",()=>setTimeout(renderCards,0));
+$("pickToggle").onclick=()=>{const c=$("picker").classList.toggle("collapsed");$("pickToggle").textContent=c?"Show sounds":"Hide sounds"};
+if(matchMedia("(max-width:900px) and (orientation:portrait), (max-height:500px)").matches){$("picker").classList.add("collapsed");$("pickToggle").textContent="Show sounds"}
+$("settingsBtn").onclick=()=>$("drawer").classList.add("open");$("closeDrawer").onclick=()=>$("drawer").classList.remove("open");
+const SCENES={desert:{n:"Desert",i:"🏜"},night:{n:"Neon night",i:"🌃"},alpine:{n:"Alpine",i:"🏔"}};
+function sceneUI(){$("sceneName").textContent=SCENES[UI.scene].n;$("sceneBtn").firstChild.textContent=SCENES[UI.scene].i+" "}
+$("sceneBtn").onclick=()=>{const k=Object.keys(SCENES);UI.scene=k[(k.indexOf(UI.scene)+1)%k.length];localStorage.setItem("scene",UI.scene);sceneUI();buildScenery()};
+$("animBtn").onclick=()=>{UI.anim=!UI.anim;localStorage.setItem("anim",UI.anim?"1":"0");$("animBtn").classList.toggle("on",UI.anim);$("animBtn").textContent=UI.anim?"Animated":"Still"};
+$("animBtn").classList.toggle("on",UI.anim);$("animBtn").textContent=UI.anim?"Animated":"Still";sceneUI();
+// ---------- scenery (original procedural art) ----------
+const cv=$("scene"),g=cv.getContext("2d");let W=0,H=0,DPR=1;
+function rnd(seed){let x=seed|0||1;return()=>{x^=x<<13;x^=x>>>17;x^=x<<5;return((x>>>0)%10000)/10000}}
+let ridges=[],props=[],stars=[],clouds=[];
+function buildScenery(){const r=rnd(UI.scene.length*977+13);
+ ridges=[0,1,2].map(l=>{const pts=[];let y=0;for(let i=0;i<=64;i++){y+=(r()-.5)*(l===0?.5:.35);y*=.92;pts.push((UI.scene==="alpine"?Math.abs(Math.sin(i*.6+l*2+r()))*.8:.25+Math.abs(y))*(1-l*.25))}return pts});
+ stars=Array.from({length:140},()=>[r(),r()*.5,r()]);clouds=Array.from({length:7},()=>[r(),.05+r()*.22,.08+r()*.12]);
+ props=[];for(let i=0;i<34;i++)props.push({z:6+i*9,side:i%2?1:-1,seed:r(),k:r()})}
+function curveX(z){const d=UI.dist+z;return Math.sin(d/420)*90+Math.sin(d/157)*25-(Math.sin(UI.dist/420)*90+Math.sin(UI.dist/157)*25)}
+function resize(){DPR=Math.min(1.5,window.devicePixelRatio||1);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*DPR;cv.height=H*DPR;g.setTransform(DPR,0,0,DPR,0,0)}
+addEventListener("resize",resize);resize();buildScenery();
+const PAL={desert:{sky:["#2b4f8f","#e88a5a","#ffd29a"],sun:"#fff1c4",far:"#b5604a",mid:"#c8734d",near:"#d48a55",ground:"#c98d58",road:"#3b3d42",edge:"#f3efe6",dash:"#ffc94a"},
+ night:{sky:["#05040f","#1b1240","#43206b"],sun:"#ff4fd8",far:"#1a1430",mid:"#120e24",near:"#0c0a18",ground:"#0d0b17",road:"#1c1b26",edge:"#9f7bff",dash:"#ffd23f"},
+ alpine:{sky:["#3d86d8","#8cc3f0","#dbeefa"],sun:"#ffffff",far:"#8aa3c2",mid:"#5f8a6a",near:"#3f6f4a",ground:"#4d7d45",road:"#44474d",edge:"#ffffff",dash:"#ffffff"}};
+function drawScene(dt){
+ const P=PAL[UI.scene],hz=H*.5,cx=W/2,f=H*.9,camH=1.4,v=st.smooth/3.6; // m/s
+ if(UI.anim)UI.dist+=v*dt;
+ const sk=g.createLinearGradient(0,0,0,hz);sk.addColorStop(0,P.sky[0]);sk.addColorStop(.7,P.sky[1]);sk.addColorStop(1,P.sky[2]);g.fillStyle=sk;g.fillRect(0,0,W,hz+1);
+ if(UI.scene==="night"){g.fillStyle="#fff";for(const s of stars){g.globalAlpha=.3+.7*s[2];g.fillRect(s[0]*W,s[1]*hz,1.5,1.5)}g.globalAlpha=1}
+ // sun / moon
+ const sx=cx+W*.18-curveX(400)*.6,sy=hz-H*.11;g.fillStyle=P.sun;g.globalAlpha=UI.scene==="night"?.85:1;g.beginPath();g.arc(sx,sy,H*.07,0,7);g.fill();
+ if(UI.scene==="night"){g.fillStyle=P.sky[1];for(let i=0;i<5;i++)g.fillRect(sx-H*.08,sy+i*H*.018,H*.16,H*.006)}g.globalAlpha=1;
+ if(UI.scene!=="night"){g.fillStyle="rgba(255,255,255,.75)";const off=UI.dist*.002+performance.now()/90000;
+  for(const c of clouds){const x=((c[0]+off*c[2])%1.2-.1)*W,y=c[1]*hz,w=c[2]*W;g.beginPath();g.ellipse(x,y,w,w*.12,0,0,7);g.fill()}}
+ // ridges with parallax against the road curve
+ [P.far,P.mid,P.near].forEach((col,l)=>{const pts=ridges[l],shift=-curveX(600)*(0.4+l*.3)-(UI.dist*0.0)*(l+1),hgt=H*(.16-l*.035);
+  g.fillStyle=col;g.beginPath();g.moveTo(0,hz+1);const step=W*1.6/64;
+  for(let i=0;i<=64;i++){const x=i*step-W*.3+shift%step;g.lineTo(x,hz-pts[i]*hgt)}g.lineTo(W,hz+1);g.fill()});
+ if(UI.scene==="night"){g.fillStyle="#0a0815";for(let i=0;i<40;i++){const x=(i/40)*W*1.3-W*.15-curveX(600)*.3,h=H*(.04+((i*37)%11)/11*.12);g.fillRect(x,hz-h,W/48,h);
+   g.fillStyle="rgba(255,210,90,.6)";for(let j=0;j<4;j++)if((i*7+j*3)%5<2)g.fillRect(x+3,hz-h+6+j*8,3,3);g.fillStyle="#0a0815"}}
+ // ground
+ const gg=g.createLinearGradient(0,hz,0,H);gg.addColorStop(0,P.far);gg.addColorStop(.15,P.ground);gg.addColorStop(1,P.ground);g.fillStyle=gg;g.fillRect(0,hz,W,H-hz);
+ // road segments far->near
+ const zs=[];for(let z=300;z>1.2;z*=.94)zs.push(z);const proj=(x,z)=>[cx+(x-curveX(z))*f/z,hz+camH*f/z];
+ for(let i=0;i<zs.length-1;i++){const z1=zs[i],z2=zs[i+1],[l1,y1]=proj(-5,z1),[r1]=proj(5,z1),[l2,y2]=proj(-5,z2),[r2]=proj(5,z2);
+  g.fillStyle=P.road;g.beginPath();g.moveTo(l1,y1);g.lineTo(r1,y1);g.lineTo(r2,y2);g.lineTo(l2,y2);g.fill();
+  const e=(x,w,col)=>{const[a1]=proj(x-w,z1),[b1]=proj(x+w,z1),[a2]=proj(x-w,z2),[b2]=proj(x+w,z2);g.fillStyle=col;g.beginPath();g.moveTo(a1,y1);g.lineTo(b1,y1);g.lineTo(b2,y2);g.lineTo(a2,y2);g.fill()};
+  e(-4.7,.12,P.edge);e(4.7,.12,P.edge);
+  if(Math.floor((UI.dist+z1)/6)%2===0)e(0,.1,P.dash)}
+ // roadside props (poles, cacti, pines, neon signs)
+ for(const p of props){p.z-=UI.anim?v*dt:0;if(p.z<1.5){p.z+=34*9;p.seed=Math.random()}}
+ props.sort((a,b)=>b.z-a.z);
+ for(const p of props){const x=p.side*(8+p.k*10),[px,py]=proj(x,p.z),s=f/p.z;if(py<hz||px<-200||px>W+200)continue;
+  if(UI.scene==="desert"){if(p.seed<.5){g.fillStyle="#5b3b26";g.fillRect(px-.12*s,py-9*s,.24*s,9*s);g.fillRect(px-1.2*s,py-8.4*s,2.4*s,.15*s)}
+    else{g.fillStyle="#3f7a3a";g.fillRect(px-.3*s,py-3*s,.6*s,3*s);g.fillRect(px-.9*s,py-2.2*s,.3*s,1.2*s);g.fillRect(px+.6*s,py-2.6*s,.3*s,1.4*s)}}
+  else if(UI.scene==="alpine"){g.fillStyle=p.seed<.5?"#24502e":"#2d5f37";g.beginPath();g.moveTo(px,py-7*s);g.lineTo(px-1.6*s,py-1*s);g.lineTo(px+1.6*s,py-1*s);g.fill();g.fillStyle="#4a3524";g.fillRect(px-.15*s,py-1*s,.3*s,1*s)}
+  else{g.fillStyle="#15122a";g.fillRect(px-.1*s,py-6*s,.2*s,6*s);const hue=p.seed<.33?"#ff3fb4":p.seed<.66?"#38d6ff":"#ffd23f";g.fillStyle=hue;g.shadowColor=hue;g.shadowBlur=12;g.fillRect(px-1.2*s,py-6.8*s,2.4*s,.9*s);g.shadowBlur=0}}
+ // speed vignette
+ const k=Math.min(1,st.smooth/220);if(k>.05){const vg=g.createRadialGradient(cx,hz,H*.25,cx,hz,H*.95);vg.addColorStop(0,"rgba(0,0,0,0)");vg.addColorStop(1,`rgba(0,0,0,${.45*k})`);g.fillStyle=vg;g.fillRect(0,0,W,H)}
+}
+// ---------- gauges ----------
+function fitCanvas(c){const r=c.getBoundingClientRect(),d=Math.min(2,window.devicePixelRatio||1);if(c.width!==Math.round(r.width*d)){c.width=Math.round(r.width*d);c.height=Math.round(r.height*d)}return[c.getContext("2d"),c.width,c.height]}
+function drawTach(){const[t,w,h]=fitCanvas($("tach")),p=preset(),red=p.red,max=Math.ceil(red/1000+1)*1000,cx=w/2,cy=h/2,R=w*.46,a0=Math.PI*.75,a1=Math.PI*2.25,A=r=>a0+(a1-a0)*Math.min(1,r/max);
+ t.clearRect(0,0,w,h);t.fillStyle="rgba(8,10,16,.55)";t.beginPath();t.arc(cx,cy,R*1.04,0,7);t.fill();
+ t.lineWidth=R*.07;t.lineCap="butt";t.strokeStyle="rgba(255,255,255,.12)";t.beginPath();t.arc(cx,cy,R*.9,a0,a1);t.stroke();
+ t.strokeStyle="#ff2e2e";t.beginPath();t.arc(cx,cy,R*.9,A(red),a1);t.stroke();
+ const rpm=st.rpm,grad=t.createLinearGradient(0,h,w,0);grad.addColorStop(0,"#38d6ff");grad.addColorStop(.7,"#7a5cff");grad.addColorStop(1,"#ff4d2e");
+ t.strokeStyle=grad;t.lineWidth=R*.07;t.beginPath();t.arc(cx,cy,R*.9,a0,A(rpm));t.stroke();
+ t.fillStyle="#cfd8e3";t.font=`600 ${R*.1}px system-ui`;t.textAlign="center";t.textBaseline="middle";
+ for(let r=0;r<=max;r+=500){const a=A(r),maj=r%1000===0;t.strokeStyle=r>=red?"#ff5a5a":"rgba(255,255,255,.7)";t.lineWidth=maj?R*.022:R*.01;
+  t.beginPath();t.moveTo(cx+Math.cos(a)*R*.78,cy+Math.sin(a)*R*.78);t.lineTo(cx+Math.cos(a)*R*(maj?.68:.73),cy+Math.sin(a)*R*(maj?.68:.73));t.stroke();
+  if(maj){t.fillStyle=r>=red?"#ff6b6b":"#cfd8e3";t.fillText(r/1000,cx+Math.cos(a)*R*.56,cy+Math.sin(a)*R*.56)}}
+ const a=A(rpm);t.strokeStyle="#ff4d2e";t.lineWidth=R*.03;t.lineCap="round";t.shadowColor="#ff4d2e";t.shadowBlur=R*.08;
+ t.beginPath();t.moveTo(cx+Math.cos(a)*R*.42,cy+Math.sin(a)*R*.42);t.lineTo(cx+Math.cos(a)*R*.86,cy+Math.sin(a)*R*.86);t.stroke();t.shadowBlur=0;
+ t.fillStyle="rgba(255,255,255,.55)";t.font=`500 ${R*.07}px system-ui`;t.fillText("×1000 rpm",cx,cy+R*.72);
+ // shift light
+ const leds=$("shift").children,n=leds.length,on=Math.max(0,(rpm-red*.72)/(red*.24)),flash=rpm>red*.955&&(performance.now()/90|0)%2;
+ for(let i=0;i<n;i++){const lit=on*n>i;leds[i].style.background=flash?"#3d8bff":lit?(i<3?"#2ee6a0":i<5?"#ffcc33":"#ff3030"):"rgba(255,255,255,.12)"}}
+function drawBoost(){if($("boostWrap").style.display==="none")return;const[t,w,h]=fitCanvas($("boost")),cx=w/2,cy=h*.55,R=w*.42,a0=Math.PI*.8,a1=Math.PI*2.2;
+ const b=engine&&engine.turbo?engine.turbo.boost:0;UI.boost+=(b-UI.boost)*.3;t.clearRect(0,0,w,h);
+ t.fillStyle="rgba(8,10,16,.55)";t.beginPath();t.arc(cx,cy,R*1.12,0,7);t.fill();t.lineWidth=R*.14;t.strokeStyle="rgba(255,255,255,.12)";t.beginPath();t.arc(cx,cy,R*.9,a0,a1);t.stroke();
+ t.strokeStyle="#38d6ff";t.shadowColor="#38d6ff";t.shadowBlur=R*.2;t.beginPath();t.arc(cx,cy,R*.9,a0,a0+(a1-a0)*UI.boost);t.stroke();t.shadowBlur=0;
+ t.fillStyle="#fff";t.font=`700 ${R*.42}px system-ui`;t.textAlign="center";t.textBaseline="middle";t.fillText((UI.boost*1.4).toFixed(1),cx,cy);t.fillStyle="#a9b4c0";t.font=`500 ${R*.2}px system-ui`;t.fillText("bar",cx,cy+R*.38)}
+let lastFrame=performance.now();window.__ui={frames:0,dist:()=>UI.dist};
+function frame(now){const dt=Math.min(.1,(now-lastFrame)/1000);lastFrame=now;
+ try{drawScene(dt);drawTach();drawBoost()}catch(e){console.error(e)}window.__ui.frames++;requestAnimationFrame(frame)}
+requestAnimationFrame(frame);renderCards();
 </script></body></html>
